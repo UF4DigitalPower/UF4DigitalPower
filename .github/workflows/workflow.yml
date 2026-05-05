@@ -5,7 +5,7 @@ name: Build and Release STM32F407
 
 on:
   push:
-    branches: [None]
+    branches: [Upper_release]
 
 jobs:
   build:
