@@ -31,8 +31,9 @@ jobs:
       - name: Generate tag
         id: tag
         run: |
-          TAG="$(date +%Y%m%d)-$(printf '%03d' $GITHUB_RUN_NUMBER)"
           DATE_MM_DD="$(date +%m_%d)"
+          TAG="Upper_${DATE_MM_DD}_$(printf '%03d' "$GITHUB_RUN_NUMBER")"
+
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "date_mm_dd=$DATE_MM_DD" >> $GITHUB_OUTPUT
 
