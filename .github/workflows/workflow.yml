@@ -1,7 +1,7 @@
 permissions:
   contents: write
 
-name: Build and Release STM32F407
+name: Build and Release Upper
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -38,9 +38,9 @@ jobs:
 
       - name: Prepare release assets
         run: |
-          cp "build/STM32F407_LM5175.elf" "build/UF4DP_Power_${{ steps.tag.outputs.date_mm_dd }}.elf"
-          cp "build/STM32F407_LM5175.hex" "build/UF4DP_Power_${{ steps.tag.outputs.date_mm_dd }}.hex"
-          cp "build/STM32F407_LM5175.bin" "build/UF4DP_Power_${{ steps.tag.outputs.date_mm_dd }}.bin"
+          cp "build/STM32H743.elf" "build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.elf"
+          cp "build/STM32H743.hex" "build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.hex"
+          cp "build/STM32H743.bin" "build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.bin"
 
       - name: Create Release + Upload assets
         uses: softprops/action-gh-release@v2
@@ -48,8 +48,8 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: Firmware ${{ steps.tag.outputs.tag }}
           files: |
-            build/UF4DP_Power_${{ steps.tag.outputs.date_mm_dd }}.elf
-            build/UF4DP_Power_${{ steps.tag.outputs.date_mm_dd }}.hex
-            build/UF4DP_Power_${{ steps.tag.outputs.date_mm_dd }}.bin
+            build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.elf
+            build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.hex
+            build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.bin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
