@@ -73,25 +73,38 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(KEY_I_PUSH_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : KEY_A_PUSH_Pin */
-  GPIO_InitStruct.Pin = KEY_A_PUSH_Pin;
+  /*Configure GPIO pin : KEY_V_PUSH_Pin */
+  GPIO_InitStruct.Pin = KEY_V_PUSH_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(KEY_A_PUSH_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(KEY_V_PUSH_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LCD_TP_INT_Pin LCD_TP_RST_Pin */
   GPIO_InitStruct.Pin = LCD_TP_INT_Pin|LCD_TP_RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LCD_CS_Pin LCD_RST_Pin */
   GPIO_InitStruct.Pin = LCD_CS_Pin|LCD_RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 }
 

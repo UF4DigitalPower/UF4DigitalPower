@@ -66,10 +66,10 @@ include_directories(Core/Inc
         Drivers/CMSIS/Include
         USER
 
-        GUI
-        GUI/demos/benchmark
-        GUI/src
-        GUI/app
+#        GUI
+#        GUI/demos/benchmark
+#        GUI/src
+#        GUI/app
 )
 
 add_definitions(-DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx)
@@ -78,7 +78,7 @@ file(GLOB_RECURSE SOURCES
         "Core/*.*"
         "Drivers/*.*"
         "USER/*.*"
-        "GUI/*.*"
+#        "GUI/*.*"
 )
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32H743ZITX_FLASH.ld)

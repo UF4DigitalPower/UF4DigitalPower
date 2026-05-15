@@ -59,14 +59,19 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define KEY_UP_Pin GPIO_PIN_2
 #define KEY_UP_GPIO_Port GPIOE
+#define KEY_UP_EXTI_IRQn EXTI2_IRQn
 #define KEY_DN_Pin GPIO_PIN_3
 #define KEY_DN_GPIO_Port GPIOE
+#define KEY_DN_EXTI_IRQn EXTI3_IRQn
 #define KEY_R_Pin GPIO_PIN_4
 #define KEY_R_GPIO_Port GPIOE
+#define KEY_R_EXTI_IRQn EXTI4_IRQn
 #define KEY_L_Pin GPIO_PIN_5
 #define KEY_L_GPIO_Port GPIOE
+#define KEY_L_EXTI_IRQn EXTI9_5_IRQn
 #define KEY_M_Pin GPIO_PIN_6
 #define KEY_M_GPIO_Port GPIOE
+#define KEY_M_EXTI_IRQn EXTI9_5_IRQn
 #define KEY_I_A_Pin GPIO_PIN_0
 #define KEY_I_A_GPIO_Port GPIOA
 #define KEY_I_B_Pin GPIO_PIN_1
@@ -81,8 +86,8 @@ void Error_Handler(void);
 #define UART_TO_POWER_TX_GPIO_Port GPIOB
 #define UART_TO_POWER_RX_Pin GPIO_PIN_15
 #define UART_TO_POWER_RX_GPIO_Port GPIOB
-#define KEY_A_PUSH_Pin GPIO_PIN_11
-#define KEY_A_PUSH_GPIO_Port GPIOD
+#define KEY_V_PUSH_Pin GPIO_PIN_11
+#define KEY_V_PUSH_GPIO_Port GPIOD
 #define KEY_V_A_Pin GPIO_PIN_12
 #define KEY_V_A_GPIO_Port GPIOD
 #define KEY_V_B_Pin GPIO_PIN_13

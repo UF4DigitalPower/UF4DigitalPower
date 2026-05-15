@@ -91,8 +91,8 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 #define LGRAYBLUE 0XA651 //浅灰蓝色(中间层颜色)
 #define LBBLUE 0X2B12	 //浅棕蓝色(选择条目的反色)
 
-#define LCD_LOGICAL_WIDTH 640
-#define LCD_LOGICAL_HEIGHT 480
+#define LCD_LOGICAL_WIDTH 480
+#define LCD_LOGICAL_HEIGHT 640
 #define LTDC_WIDTH 480
 #define LTDC_HEIGHT 640
 #define LTDC_PIXSIZE 2
@@ -100,18 +100,19 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 extern uint16_t *const ltdc_lcd_framebuf;
 
 
-void LCD_Init(void);													  //初始化
-void LCD_Clear(uint32_t color);											  //清屏
-void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color);
+void LCD_Init(void);                                                    //初始化
+void LCD_Clear(uint32_t color);                                         //清屏
+void LCD_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color); //按坐标范围填充单色
+void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color); //按宽高填充
 void LCD_Font(uint16_t x, uint16_t y, const char *text, const GFXfont *p_font, uint8_t size, uint32_t color24);
-void LCD_Display_Dir(uint8_t dir);												  //设置显示方向
-void LCD_DrawPoint(uint16_t x, uint16_t y);										  //画点
-void LCD_Draw_Circle(uint16_t x0, uint16_t y0, uint8_t r);								  //画圆
-void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);						  //画线
-void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);					  //画矩形
-void LCD_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color);				  //填充单色
-void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color);		  //填充指定颜色
+void LCD_Display_Dir(uint8_t dir);                                      //设置显示方向
+void LCD_DrawPoint(uint16_t x, uint16_t y);                              //画点
+void LCD_Draw_Circle(uint16_t x0, uint16_t y0, uint8_t r);               //画圆
+void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);   //画线
+void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2); //画矩形
+void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color); //填充指定颜色
 void LCD_ShowString(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint8_t size, uint8_t *p); //显示一个字符串,12/16字体
 
 
 #endif //STM32H750_COM_LCD_H
+

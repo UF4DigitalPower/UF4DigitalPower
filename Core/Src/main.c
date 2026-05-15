@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
+#include "dma.h"
 #include "dma2d.h"
 #include "i2c.h"
 #include "ltdc.h"
@@ -32,7 +34,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "lcd.h"
-#include "lvgl_port.h"
 #include "st7701.h"
 
 /* USER CODE END Includes */
@@ -89,6 +90,14 @@ int main(void)
   /* MPU Configuration--------------------------------------------------------*/
   MPU_Config();
 
+  /* Enable the CPU Cache */
+
+  /* Enable I-Cache---------------------------------------------------------*/
+  SCB_EnableICache();
+
+  /* Enable D-Cache---------------------------------------------------------*/
+  SCB_EnableDCache();
+
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
@@ -107,6 +116,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_DMA2D_Init();
   MX_FMC_Init();
   MX_I2C3_Init();
@@ -119,6 +129,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
+  MX_ADC3_Init();
   /* USER CODE BEGIN 2 */
 
   if (HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL) != HAL_OK)
@@ -139,14 +150,11 @@ int main(void)
   LCD_Init();
   st7701Init();
   HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
-  LCD_Display_Dir(0); //横屏
+  LCD_Clear(RED);
 
-#if TEAR_DIAG_STATIC_ONLY
-  LCD_ShowDemo();
-#else
-  LCD_Clear(BLACK);
-  LVGL_Port_RunBenchmark();
-#endif
+  LCD_DrawRectangle(10, 10, 100, 100);
+  // LCD_Display_Dir(1); //横屏
+
 
   /* USER CODE END 2 */
 
@@ -157,20 +165,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-#if TEAR_DIAG_STATIC_ONLY
-    HAL_Delay(20);
-#else
-    uint32_t wait_ms = LVGL_Port_Task();
-    if (wait_ms < 1U)
-    {
-      wait_ms = 1U;
-    }
-    else if (wait_ms > 5U)
-    {
-      wait_ms = 5U;
-    }
-    HAL_Delay(wait_ms);
-#endif
   }
   /* USER CODE END 3 */
 }
@@ -287,29 +281,27 @@ void MPU_Config(void)
 {
   MPU_Region_InitTypeDef MPU_InitStruct = {0};
 
+  /* Disables the MPU */
   HAL_MPU_Disable();
 
-  /* External SDRAM 0xC0000000~0xC1FFFFFF: Normal memory, Write-Through, no write allocate.
-   * LTDC continuously reads framebuffer from SDRAM while CPU/LVGL writes SDRAM.
-   * WT keeps CPU writes visible to LTDC without explicit cache clean for every GUI flush.
-   */
+  /** Initializes and configures the Region and the memory to be protected
+  */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  MPU_InitStruct.BaseAddress = EXT_SDRAM_ADDR;
+  MPU_InitStruct.BaseAddress = 0xC0000000;
   MPU_InitStruct.Size = MPU_REGION_SIZE_32MB;
   MPU_InitStruct.SubRegionDisable = 0x0;
   MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
   MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
   MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
-  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
   MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
-  HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+  /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
-  SCB_EnableICache();
-  SCB_EnableDCache();
 }
 
 /**

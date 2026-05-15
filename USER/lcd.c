@@ -5,11 +5,14 @@
 #include "lcd.h"
 #include <stdint.h>
 
+#include "dma2d.h"
 #include "stdio.h"
 #include "string.h"
-//#include "dma2d.h"
 
 //LTDC中需要实现清屏，画点，区域填充单色，区域填充指定色块函数。
+
+#define LCD_PANEL_WIDTH   480U
+#define LCD_PANEL_HEIGHT  640U
 
 //LCD的画笔颜色和背景色
 uint32_t POINT_COLOR = 0xFF000000; //画笔颜色
@@ -17,26 +20,107 @@ uint32_t BACK_COLOR = 0xFFFFFFFF;  //背景色
 
 //管理LCD重要参数
 
-//初始化为RGB屏480*272，横屏，每个像素2字节
-_lcd_dev lcddev = { .id = 0X7701, .width = LCD_LOGICAL_WIDTH, .height = LCD_LOGICAL_HEIGHT, .dir = 1, .pixsize = LTDC_PIXSIZE, };
+//初始化为RGB屏480*640，默认竖屏，每个像素2字节
+_lcd_dev lcddev = { .id = 0X7701, .width = LCD_LOGICAL_WIDTH, .height = LCD_LOGICAL_HEIGHT, .dir = 0, .pixsize = LTDC_PIXSIZE, };
 
 uint16_t *const ltdc_lcd_framebuf = (uint16_t *)LCD_FRAME_BUFFER;
 
+static inline uint16_t LCD_PhysicalWidth(void)
+{
+	return LCD_PANEL_WIDTH;
+}
 
-//画点函数
-//x,y:坐标
-//color:颜色
+static inline uint16_t LCD_PhysicalHeight(void)
+{
+	return LCD_PANEL_HEIGHT;
+}
+
+static void LCD_DMA2D_WaitTransferComplete(void)
+{
+	uint32_t timeout = 0;
+
+	while ((DMA2D->ISR & DMA2D_ISR_TCIF) == 0U) {
+		timeout++;
+		if (timeout > 0x1FFFFFU) {
+			break;
+		}
+	}
+	DMA2D->IFCR |= DMA2D_IFCR_CTCIF;
+}
+
+static void LCD_DMA2D_FillRectRaw(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint32_t color)
+{
+	if (width == 0U || height == 0U) {
+		return;
+	}
+
+	if (x >= LCD_PhysicalWidth() || y >= LCD_PhysicalHeight()) {
+		return;
+	}
+
+	if ((uint32_t)x + width > LCD_PhysicalWidth()) {
+		width = (uint16_t)(LCD_PhysicalWidth() - x);
+	}
+	if ((uint32_t)y + height > LCD_PhysicalHeight()) {
+		height = (uint16_t)(LCD_PhysicalHeight() - y);
+	}
+
+	RCC->AHB1ENR |= 1 << 23;
+	DMA2D->CR &= ~DMA2D_CR_START;
+	DMA2D->CR = 3U << 16; /* R2M */
+	DMA2D->OPFCCR = LTDC_PIXEL_FORMAT_RGB565;
+	DMA2D->OOR = LCD_PhysicalWidth() - width;
+	DMA2D->OMAR = (uint32_t)ltdc_lcd_framebuf + (uint32_t)LTDC_PIXSIZE * (LCD_PhysicalWidth() * y + x);
+	DMA2D->NLR = (uint32_t)height | ((uint32_t)width << 16);
+	DMA2D->OCOLR = color;
+	DMA2D->CR |= DMA2D_CR_START;
+	LCD_DMA2D_WaitTransferComplete();
+}
+
+static void LCD_DMA2D_CopyRectRaw(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *color)
+{
+	if (width == 0U || height == 0U || color == NULL) {
+		return;
+	}
+
+	if (x >= LCD_PhysicalWidth() || y >= LCD_PhysicalHeight()) {
+		return;
+	}
+
+	if ((uint32_t)x + width > LCD_PhysicalWidth()) {
+		width = (uint16_t)(LCD_PhysicalWidth() - x);
+	}
+	if ((uint32_t)y + height > LCD_PhysicalHeight()) {
+		height = (uint16_t)(LCD_PhysicalHeight() - y);
+	}
+
+	RCC->AHB1ENR |= 1 << 23;
+	__HAL_DMA2D_CLEAR_FLAG(&hdma2d, DMA2D_FLAG_TC);
+	DMA2D->CR &= ~DMA2D_CR_START;
+	DMA2D->CR = DMA2D_M2M;
+	DMA2D->FGPFCCR = LTDC_PIXEL_FORMAT_RGB565;
+	DMA2D->FGOR = 0;
+	DMA2D->OOR = LCD_PhysicalWidth() - width;
+	DMA2D->FGMAR = (uint32_t)color;
+	DMA2D->OMAR = (uint32_t)ltdc_lcd_framebuf + (uint32_t)LTDC_PIXSIZE * (LCD_PhysicalWidth() * y + x);
+	DMA2D->NLR = (uint32_t)height | ((uint32_t)width << 16);
+	DMA2D->CR |= DMA2D_CR_START;
+	LCD_DMA2D_WaitTransferComplete();
+}
+
+
 void LTDC_Draw_Point(uint16_t x, uint16_t y, uint32_t color) {
-	uint16_t fb_x;
-	uint16_t fb_y;
-
 	if (x >= lcddev.width || y >= lcddev.height) {
 		return;
 	}
 
-	fb_x = y;
-	fb_y = (uint16_t)(LTDC_HEIGHT - 1U - x);
-	*(uint16_t*) ((uint32_t) ltdc_lcd_framebuf + LTDC_PIXSIZE * (LTDC_WIDTH * fb_y + fb_x)) = color;
+	if (lcddev.dir == 0U) {
+		ltdc_lcd_framebuf[(uint32_t)y * LCD_PhysicalWidth() + x] = (uint16_t)color;
+	} else {
+		const uint16_t fb_x = y;
+		const uint16_t fb_y = (uint16_t)(LCD_PhysicalHeight() - 1U - x);
+		ltdc_lcd_framebuf[(uint32_t)fb_y * LCD_PhysicalWidth() + fb_x] = (uint16_t)color;
+	}
 }
 
 
@@ -44,12 +128,15 @@ uint16_t LTDC_PanelID_Read(void) {
 return 0;
 }
 
-//设置LCD显示方向
-//dir:0,竖屏；1,横屏
 void LCD_Display_Dir(uint8_t dir) {
-	lcddev.dir = dir;        //横屏/竖屏
-	lcddev.width = LCD_LOGICAL_WIDTH;
-	lcddev.height = LCD_LOGICAL_HEIGHT;
+	lcddev.dir = (dir == 0U) ? 0U : 1U;        //竖屏/横屏
+	if (lcddev.dir == 0U) {
+		lcddev.width = LCD_PhysicalWidth();
+		lcddev.height = LCD_PhysicalHeight();
+	} else {
+		lcddev.width = LCD_PhysicalHeight();
+		lcddev.height = LCD_PhysicalWidth();
+	}
 }
 
 //画点
@@ -59,76 +146,59 @@ void LCD_DrawPoint(uint16_t x, uint16_t y) {
 	LTDC_Draw_Point(x, y, POINT_COLOR);
 }
 
-//初始化lcd
 void LCD_Init(void) {
 	lcddev.id = 0X7701;
-	lcddev.width = LCD_LOGICAL_WIDTH;
-	lcddev.height = LCD_LOGICAL_HEIGHT;
-	lcddev.dir = 1;
+	lcddev.dir = 0;
+	lcddev.width = LCD_PhysicalWidth();
+	lcddev.height = LCD_PhysicalHeight();
 	lcddev.pixsize = LTDC_PIXSIZE;
 //			LTDC_PanelID_Read();
 	printf("LCD ID:%#x\r\n", lcddev.id);
 }
 
-//清屏函数
-//color:要清屏的填充色
 void LCD_Clear(uint32_t color) {
-	uint32_t timeout = 0;
-
-	RCC->AHB1ENR |= 1 << 23;
-	DMA2D->CR = 3 << 16;
-	DMA2D->OPFCCR = LTDC_PIXEL_FORMAT_RGB565;
-	DMA2D->OOR = 0;
-	DMA2D->CR &= ~(1 << 0);
-	DMA2D->OMAR = (uint32_t)ltdc_lcd_framebuf;
-	DMA2D->NLR = LTDC_HEIGHT | (LTDC_WIDTH << 16);
-	DMA2D->OCOLR = color;
-	DMA2D->CR |= 1 << 0;
-	while ((DMA2D->ISR & (1 << 1)) == 0) {
-		timeout++;
-		if (timeout > 0X1FFFFF) {
-			break;
-		}
-	}
-	DMA2D->IFCR |= 1 << 1;
+	LCD_DMA2D_FillRectRaw(0, 0, LCD_PhysicalWidth(), LCD_PhysicalHeight(), color);
 }
 
-//Fill a specified area with a single color
-//(sx,sy),(ex,ey): Coordinates of the diagonal corners of the filled rectangle. The area size is: (ex - sx + 1) * (ey - sy + 1)
-//color: The color to be filled
-void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color) {
-	uint16_t x;
-	uint16_t y;
-	uint16_t pex;
-	uint16_t pey;
-
-	if (sx >= lcddev.width || sy >= lcddev.height || ex == 0 || ey == 0) {
+void LCD_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color)
+{
+	if (sx > ex || sy > ey) {
 		return;
 	}
 
-	pex = sx + ex - 1U;
-	pey = sy + ey - 1U;
-	if (pex >= lcddev.width) {
-		pex = lcddev.width - 1U;
-	}
-	if (pey >= lcddev.height) {
-		pey = lcddev.height - 1U;
+	if (lcddev.dir == 0U) {
+		LCD_DMA2D_FillRectRaw(sx, sy, (uint16_t)(ex - sx + 1U), (uint16_t)(ey - sy + 1U), color);
+		return;
 	}
 
-	for (y = sy; y <= pey; y++) {
-		for (x = sx; x <= pex; x++) {
+	for (uint16_t y = sy; y <= ey; y++) {
+		for (uint16_t x = sx; x <= ex; x++) {
 			LTDC_Draw_Point(x, y, color);
 		}
 	}
 }
 
-//在指定区域内填充指定颜色块
-//(sx,sy),(ex,ey):填充矩形对角坐标,区域大小为:(ex-sx+1)*(ey-sy+1)
-//color:要填充的颜色
+void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color) {
+	if (sx >= lcddev.width || sy >= lcddev.height || ex == 0 || ey == 0) {
+		return;
+	}
+
+	if (lcddev.dir == 0U) {
+		LCD_DMA2D_FillRectRaw(sx, sy, ex, ey, color);
+		return;
+	}
+
+	const uint16_t pex = (uint16_t)(sx + ex - 1U);
+	const uint16_t pey = (uint16_t)(sy + ey - 1U);
+	for (uint16_t y = sy; y <= pey; y++) {
+		for (uint16_t x = sx; x <= pex; x++) {
+			LTDC_Draw_Point(x, y, color);
+		}
+	}
+}
+
 void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color) {
 	uint32_t psx, psy, pex, pey; //以LCD面板为基准的坐标系,不随横竖屏变化而变化
-	uint32_t timeout = 0;
-	uint16_t offline;
 	uint32_t addr;
 	//坐标系转换
 	if (lcddev.dir) //横屏
@@ -144,27 +214,8 @@ void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t
 		pex = ey;
 		pey = lcddev.height - sx - 1;
 	}
-	offline = lcddev.width - (pex - psx + 1);
 	addr = ((uint32_t) ltdc_lcd_framebuf + lcddev.pixsize * (lcddev.width * psy + psx));
-	__HAL_DMA2D_CLEAR_FLAG(&hdma2d, DMA2D_FLAG_TC);			//清除传输完成标志
-	RCC->AHB1ENR |= 1 << 23;								//使能DM2D时钟
-	DMA2D->CR &= ~(DMA2D_CR_START);							//先停止 DMA2D
-	DMA2D->CR = DMA2D_M2M;									//存储器到存储器模式
-	DMA2D->FGPFCCR = LTDC_PIXEL_FORMAT_RGB565;							//设置颜色格式
-	DMA2D->FGOR = 0;										//前景层行偏移为0
-	DMA2D->OOR = offline;									//设置行偏移
-	DMA2D->CR &= ~(1 << 0);									//先停止DMA2D
-	DMA2D->FGMAR = (uint32_t) color;								//源地址
-	DMA2D->OMAR = addr;										//输出存储器地址
-	DMA2D->NLR = (pey - psy + 1) | ((pex - psx + 1) << 16); //设定行数寄存器
-	DMA2D->CR |= 1 << 0;									//启动DMA2D
-	while ((DMA2D->ISR & (1 << 1)) == 0)					//等待传输完成
-	{
-		timeout++;
-		if (timeout > 0X1FFFFF)
-			break; //超时退出
-	}
-	DMA2D->IFCR |= 1 << 1; //清除传输完成标志
+	LCD_DMA2D_CopyRectRaw((uint16_t)psx, (uint16_t)psy, (uint16_t)(pex - psx + 1U), (uint16_t)(pey - psy + 1U), color);
 }
 
 //画线
