@@ -6,11 +6,23 @@
 #include <stdint.h>
 #include <string.h>
 
+/*
+ * Full-refresh double buffering.
+ *
+ * The previous dirty-rectangle single-buffer path tears because CPU writes the
+ * same framebuffer that LTDC is scanning. The previous coherent dirty double
+ * buffer copied the whole front framebuffer first, which adds a large SDRAM read
+ * and write burst before every frame.
+ *
+ * This version lets LVGL redraw the complete screen into the back framebuffer.
+ * We never write the displayed front framebuffer, and we do not copy front to
+ * back. After the last flush of a refresh cycle, LTDC switches to the completed
+ * back framebuffer during vertical blanking.
+ */
 #define LV_PORT_HOR_RES        LTDC_WIDTH
 #define LV_PORT_VER_RES        LTDC_HEIGHT
 #define LV_PORT_BUF_LINES      10U
 #define LV_PORT_BUFFER_PIXELS  (LV_PORT_HOR_RES * LV_PORT_BUF_LINES)
-#define LV_PORT_FRAME_PIXELS   (LV_PORT_HOR_RES * LV_PORT_VER_RES)
 #define LV_PORT_FB0            ((uint16_t *)SDRAM_LCD_BUF1)
 #define LV_PORT_FB1            ((uint16_t *)SDRAM_LCD_BUF2)
 
@@ -22,7 +34,6 @@ static lv_color_t s_draw_buf2[LV_PORT_BUFFER_PIXELS];
 
 static uint16_t *s_front_fb = LV_PORT_FB0;
 static uint16_t *s_back_fb = LV_PORT_FB1;
-static uint8_t s_frame_started = 0U;
 static volatile uint8_t s_ltdc_reload_done = 0U;
 
 static lv_obj_t *s_box;
@@ -36,12 +47,7 @@ void HAL_LTDC_ReloadEventCallback(LTDC_HandleTypeDef *hltdc)
     s_ltdc_reload_done = 1U;
 }
 
-static void lvgl_copy_framebuffer(uint16_t *dst, const uint16_t *src)
-{
-    memcpy(dst, src, LV_PORT_FRAME_PIXELS * sizeof(uint16_t));
-}
-
-static void lvgl_swap_on_vblank(void)
+static uint8_t lvgl_swap_on_vblank(void)
 {
     uint16_t *tmp;
     uint32_t start_tick;
@@ -49,17 +55,24 @@ static void lvgl_swap_on_vblank(void)
     s_ltdc_reload_done = 0U;
     __HAL_LTDC_CLEAR_FLAG(&hltdc, LTDC_FLAG_RR);
 
-    if (HAL_LTDC_SetAddress_NoReload(&hltdc, (uint32_t)s_back_fb, 0) != HAL_OK) return;
-    if (HAL_LTDC_Reload(&hltdc, LTDC_RELOAD_VERTICAL_BLANKING) != HAL_OK) return;
+    if (HAL_LTDC_SetAddress_NoReload(&hltdc, (uint32_t)s_back_fb, 0) != HAL_OK) {
+        return 0U;
+    }
+    if (HAL_LTDC_Reload(&hltdc, LTDC_RELOAD_VERTICAL_BLANKING) != HAL_OK) {
+        return 0U;
+    }
 
     start_tick = HAL_GetTick();
     while (s_ltdc_reload_done == 0U) {
-        if ((HAL_GetTick() - start_tick) > 50U) break;
+        if ((HAL_GetTick() - start_tick) > 50U) {
+            return 0U;
+        }
     }
 
     tmp = s_front_fb;
     s_front_fb = s_back_fb;
     s_back_fb = tmp;
+    return 1U;
 }
 
 static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
@@ -74,11 +87,6 @@ static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_col
     uint32_t y;
     lv_color_t *src;
     uint16_t *dst;
-
-    if (s_frame_started == 0U) {
-        lvgl_copy_framebuffer(s_back_fb, s_front_fb);
-        s_frame_started = 1U;
-    }
 
     if (x2 >= 0 && y2 >= 0 && x1 < (int32_t)LV_PORT_HOR_RES && y1 < (int32_t)LV_PORT_VER_RES) {
         if (x1 < 0) x1 = 0;
@@ -100,8 +108,7 @@ static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_col
     }
 
     if (lv_disp_flush_is_last(disp_drv)) {
-        lvgl_swap_on_vblank();
-        s_frame_started = 0U;
+        (void)lvgl_swap_on_vblank();
     }
 
     lv_disp_flush_ready(disp_drv);
@@ -117,9 +124,9 @@ void LVGL_Port_Init(void)
 
     s_front_fb = LV_PORT_FB0;
     s_back_fb = LV_PORT_FB1;
+    memset(s_front_fb, 0, LTDC_WIDTH * LTDC_HEIGHT * sizeof(uint16_t));
+    memset(s_back_fb, 0, LTDC_WIDTH * LTDC_HEIGHT * sizeof(uint16_t));
     HAL_LTDC_SetAddress(&hltdc, (uint32_t)s_front_fb, 0);
-    LCD_Clear(BLACK);
-    lvgl_copy_framebuffer(s_back_fb, s_front_fb);
 
     lv_disp_draw_buf_init(&s_disp_draw_buf, s_draw_buf1, s_draw_buf2, LV_PORT_BUFFER_PIXELS);
     lv_disp_drv_init(&s_disp_drv);
@@ -128,14 +135,14 @@ void LVGL_Port_Init(void)
     s_disp_drv.draw_buf = &s_disp_draw_buf;
     s_disp_drv.flush_cb = lvgl_flush_cb;
     s_disp_drv.direct_mode = 0;
-    s_disp_drv.full_refresh = 0;
+    s_disp_drv.full_refresh = 1;
     lv_disp_drv_register(&s_disp_drv);
 
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
     lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
 
     label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, "LTDC SDRAM double buffer test");
+    lv_label_set_text(label, "LTDC full-refresh DB test");
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 8);
 
@@ -158,7 +165,7 @@ uint32_t LVGL_Port_Task(void)
     uint32_t now = HAL_GetTick();
     uint32_t wait;
 
-    if ((now - s_last_anim_tick) >= 33U) {
+    if ((now - s_last_anim_tick) >= 66U) {
         s_last_anim_tick = now;
         s_box_x = (int16_t)(s_box_x + s_box_dx);
         if (s_box_x < 0) {
