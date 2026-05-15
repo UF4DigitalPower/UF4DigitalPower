@@ -17,11 +17,15 @@
 #define LV_PORT_FB1            ((lv_color_t *)(LCD_FRAME_BUFFER + (LV_PORT_FRAME_PIXELS * sizeof(lv_color_t))))
 
 /*
- * Static framebuffer is OK but dynamic LVGL refresh tears/garbles on the panel.
- * First disable DMA2D so the flush path uses CPU row-copy only. This removes
- * DMA2D source-cache / bus-master issues from the equation. After the display
- * is stable, set this to 1 and retest the DMA2D path.
+ * Current diagnostic mode:
+ *   0 = single framebuffer, CPU row-copy directly into the LTDC framebuffer.
+ *       This is the most conservative path and avoids the two-framebuffer
+ *       alternating/flickering failure seen on the panel.
+ *   1 = double framebuffer with VBlank address reload.
  */
+#define LV_PORT_USE_DOUBLE_FB  0U
+
+/* Keep DMA2D disabled until the single-framebuffer path is confirmed stable. */
 #define LV_PORT_USE_DMA2D      0U
 
 static lv_disp_draw_buf_t s_disp_draw_buf;
@@ -29,6 +33,8 @@ static lv_disp_drv_t s_disp_drv;
 static uint8_t s_is_initialized = 0U;
 static lv_color_t s_draw_buf1[LV_PORT_BUFFER_PIXELS];
 static lv_color_t s_draw_buf2[LV_PORT_BUFFER_PIXELS];
+
+#if LV_PORT_USE_DOUBLE_FB
 static lv_color_t *s_front_fb = LV_PORT_FB0;
 static lv_color_t *s_back_fb = LV_PORT_FB1;
 static volatile uint8_t s_ltdc_reload_done = 0U;
@@ -38,6 +44,7 @@ void HAL_LTDC_ReloadEventCallback(LTDC_HandleTypeDef *hltdc)
     (void)hltdc;
     s_ltdc_reload_done = 1U;
 }
+#endif
 
 static void lvgl_cpu_copy(const lv_color_t *src,
                           lv_color_t *dst,
@@ -138,6 +145,7 @@ static void lvgl_fb_copy(const lv_color_t *src,
 #endif
 }
 
+#if LV_PORT_USE_DOUBLE_FB
 static void lvgl_swap_buffers_on_vblank(void)
 {
     lv_color_t *next_front = s_back_fb;
@@ -169,18 +177,26 @@ static void lvgl_swap_buffers_on_vblank(void)
     s_back_fb = s_front_fb;
     s_front_fb = next_front;
 }
+#endif
 
 static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
 {
     const uint32_t area_w = (uint32_t)(area->x2 - area->x1 + 1);
     const uint32_t area_h = (uint32_t)(area->y2 - area->y1 + 1);
+#if LV_PORT_USE_DOUBLE_FB
     lv_color_t *dst = s_back_fb + ((uint32_t)area->y1 * LV_PORT_HOR_RES) + (uint32_t)area->x1;
+#else
+    lv_color_t *dst = LV_PORT_FB0 + ((uint32_t)area->y1 * LV_PORT_HOR_RES) + (uint32_t)area->x1;
+#endif
 
+    (void)disp_drv;
     lvgl_fb_copy(color_p, dst, area_w, area_h, area_w, LV_PORT_HOR_RES);
 
+#if LV_PORT_USE_DOUBLE_FB
     if (lv_disp_flush_is_last(disp_drv)) {
         lvgl_swap_buffers_on_vblank();
     }
+#endif
 
     lv_disp_flush_ready(disp_drv);
 }
@@ -193,8 +209,12 @@ void LVGL_Port_Init(void)
 
     lv_init();
 
+#if LV_PORT_USE_DOUBLE_FB
     /* Start from identical framebuffers to avoid a garbage first swap. */
     lvgl_fb_copy(s_front_fb, s_back_fb, LV_PORT_HOR_RES, LV_PORT_VER_RES, LV_PORT_HOR_RES, LV_PORT_HOR_RES);
+#endif
+
+    HAL_LTDC_SetAddress(&hltdc, (uint32_t)LV_PORT_FB0, 0);
 
     lv_disp_draw_buf_init(&s_disp_draw_buf, s_draw_buf1, s_draw_buf2, LV_PORT_BUFFER_PIXELS);
 
@@ -204,7 +224,7 @@ void LVGL_Port_Init(void)
     s_disp_drv.draw_buf = &s_disp_draw_buf;
     s_disp_drv.flush_cb = lvgl_flush_cb;
     s_disp_drv.direct_mode = 0;
-    s_disp_drv.full_refresh = 1;
+    s_disp_drv.full_refresh = 0;
 
     lv_disp_drv_register(&s_disp_drv);
 
