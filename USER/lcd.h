@@ -40,10 +40,27 @@ extern _lcd_dev lcddev; //管理LCD重要参数
 extern uint32_t POINT_COLOR; //默认红色
 extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 
+// SDRAM / LTDC / LVGL 内存规划
+#define EXT_SDRAM_ADDR        ((uint32_t)0xC0000000)
+#define EXT_SDRAM_SIZE        (32U * 1024U * 1024U)
+#define SDRAM_LCD_SIZE        (2U * 1024U * 1024U)
+#define SDRAM_LCD_LAYER       2U
+
+#define SDRAM_LCD_BUF1        EXT_SDRAM_ADDR
+#define SDRAM_LCD_BUF2        (EXT_SDRAM_ADDR + SDRAM_LCD_SIZE)
+#define SDRAM_APP_BUF         (EXT_SDRAM_ADDR + SDRAM_LCD_SIZE * SDRAM_LCD_LAYER)
+#define SDRAM_APP_SIZE        (EXT_SDRAM_SIZE - SDRAM_LCD_SIZE * SDRAM_LCD_LAYER)
+
+/* LVGL 双全屏 draw buffer：640x480xRGB565x2，放在 SDRAM 应用区起始位置 */
+#define SDRAM_LVGL_DRAW_BUF1  SDRAM_APP_BUF
+#define SDRAM_LVGL_DRAW_BUF2  (SDRAM_LVGL_DRAW_BUF1 + (640U * 480U * 2U))
+#define SDRAM_LVGL_HEAP_ADDR  (SDRAM_APP_BUF + (2U * 640U * 480U * 2U))
+#define SDRAM_LVGL_HEAP_SIZE  (EXT_SDRAM_ADDR + EXT_SDRAM_SIZE - SDRAM_LVGL_HEAP_ADDR)
+
 //LCD MPU保护参数
 #define LCD_REGION_NUMBER MPU_REGION_NUMBER0  //LCD使用region0
-#define LCD_ADDRESS_START (0xC0000000)		  //LCD区的首地址
-#define LCD_REGION_SIZE MPU_REGION_SIZE_256MB //LCD区大小
+#define LCD_ADDRESS_START EXT_SDRAM_ADDR		  //LCD区的首地址
+#define LCD_REGION_SIZE MPU_REGION_SIZE_32MB  //LCD区大小
 
 //画笔颜色
 #define WHITE 0xFFFF
@@ -79,7 +96,7 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 #define LTDC_WIDTH 480
 #define LTDC_HEIGHT 640
 #define LTDC_PIXSIZE 2
-#define LCD_FRAME_BUFFER LCD_ADDRESS_START
+#define LCD_FRAME_BUFFER SDRAM_LCD_BUF1
 extern uint16_t *const ltdc_lcd_framebuf;
 
 
