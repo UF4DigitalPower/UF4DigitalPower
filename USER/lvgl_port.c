@@ -1,5 +1,4 @@
 #include "lvgl_port.h"
-
 #include "lcd.h"
 #include "lvgl.h"
 #include "ltdc.h"
@@ -7,16 +6,13 @@
 #include <stdint.h>
 #include <string.h>
 
-/*
- * Display smoke-test version.
- * Purpose: stop the heavy LVGL benchmark and prove whether tearing is caused
- * by SDRAM/LTDC bus pressure. This path uses LVGL only to draw a very small
- * moving object on the physical 480x640 framebuffer.
- */
 #define LV_PORT_HOR_RES        LTDC_WIDTH
 #define LV_PORT_VER_RES        LTDC_HEIGHT
 #define LV_PORT_BUF_LINES      10U
 #define LV_PORT_BUFFER_PIXELS  (LV_PORT_HOR_RES * LV_PORT_BUF_LINES)
+#define LV_PORT_FRAME_PIXELS   (LV_PORT_HOR_RES * LV_PORT_VER_RES)
+#define LV_PORT_FB0            ((uint16_t *)SDRAM_LCD_BUF1)
+#define LV_PORT_FB1            ((uint16_t *)SDRAM_LCD_BUF2)
 
 static lv_disp_draw_buf_t s_disp_draw_buf;
 static lv_disp_drv_t s_disp_drv;
@@ -24,10 +20,47 @@ static uint8_t s_is_initialized = 0U;
 static lv_color_t s_draw_buf1[LV_PORT_BUFFER_PIXELS];
 static lv_color_t s_draw_buf2[LV_PORT_BUFFER_PIXELS];
 
+static uint16_t *s_front_fb = LV_PORT_FB0;
+static uint16_t *s_back_fb = LV_PORT_FB1;
+static uint8_t s_frame_started = 0U;
+static volatile uint8_t s_ltdc_reload_done = 0U;
+
 static lv_obj_t *s_box;
 static int16_t s_box_x = 0;
 static int8_t s_box_dx = 2;
 static uint32_t s_last_anim_tick = 0;
+
+void HAL_LTDC_ReloadEventCallback(LTDC_HandleTypeDef *hltdc)
+{
+    (void)hltdc;
+    s_ltdc_reload_done = 1U;
+}
+
+static void lvgl_copy_framebuffer(uint16_t *dst, const uint16_t *src)
+{
+    memcpy(dst, src, LV_PORT_FRAME_PIXELS * sizeof(uint16_t));
+}
+
+static void lvgl_swap_on_vblank(void)
+{
+    uint16_t *tmp;
+    uint32_t start_tick;
+
+    s_ltdc_reload_done = 0U;
+    __HAL_LTDC_CLEAR_FLAG(&hltdc, LTDC_FLAG_RR);
+
+    if (HAL_LTDC_SetAddress_NoReload(&hltdc, (uint32_t)s_back_fb, 0) != HAL_OK) return;
+    if (HAL_LTDC_Reload(&hltdc, LTDC_RELOAD_VERTICAL_BLANKING) != HAL_OK) return;
+
+    start_tick = HAL_GetTick();
+    while (s_ltdc_reload_done == 0U) {
+        if ((HAL_GetTick() - start_tick) > 50U) break;
+    }
+
+    tmp = s_front_fb;
+    s_front_fb = s_back_fb;
+    s_back_fb = tmp;
+}
 
 static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
 {
@@ -42,27 +75,33 @@ static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_col
     lv_color_t *src;
     uint16_t *dst;
 
-    if (x2 < 0 || y2 < 0 || x1 >= (int32_t)LV_PORT_HOR_RES || y1 >= (int32_t)LV_PORT_VER_RES) {
-        lv_disp_flush_ready(disp_drv);
-        return;
+    if (s_frame_started == 0U) {
+        lvgl_copy_framebuffer(s_back_fb, s_front_fb);
+        s_frame_started = 1U;
     }
 
-    if (x1 < 0) x1 = 0;
-    if (y1 < 0) y1 = 0;
-    if (x2 >= (int32_t)LV_PORT_HOR_RES) x2 = (int32_t)LV_PORT_HOR_RES - 1;
-    if (y2 >= (int32_t)LV_PORT_VER_RES) y2 = (int32_t)LV_PORT_VER_RES - 1;
+    if (x2 >= 0 && y2 >= 0 && x1 < (int32_t)LV_PORT_HOR_RES && y1 < (int32_t)LV_PORT_VER_RES) {
+        if (x1 < 0) x1 = 0;
+        if (y1 < 0) y1 = 0;
+        if (x2 >= (int32_t)LV_PORT_HOR_RES) x2 = (int32_t)LV_PORT_HOR_RES - 1;
+        if (y2 >= (int32_t)LV_PORT_VER_RES) y2 = (int32_t)LV_PORT_VER_RES - 1;
 
-    src_w = (uint32_t)(area->x2 - area->x1 + 1);
-    copy_w = (uint32_t)(x2 - x1 + 1);
-    copy_h = (uint32_t)(y2 - y1 + 1);
+        src_w = (uint32_t)(area->x2 - area->x1 + 1);
+        copy_w = (uint32_t)(x2 - x1 + 1);
+        copy_h = (uint32_t)(y2 - y1 + 1);
+        src = color_p + ((uint32_t)(y1 - area->y1) * src_w) + (uint32_t)(x1 - area->x1);
+        dst = s_back_fb + ((uint32_t)y1 * LTDC_WIDTH) + (uint32_t)x1;
 
-    src = color_p + ((uint32_t)(y1 - area->y1) * src_w) + (uint32_t)(x1 - area->x1);
-    dst = ((uint16_t *)LCD_FRAME_BUFFER) + ((uint32_t)y1 * LTDC_WIDTH) + (uint32_t)x1;
+        for (y = 0U; y < copy_h; y++) {
+            memcpy(dst, src, copy_w * sizeof(lv_color_t));
+            src += src_w;
+            dst += LTDC_WIDTH;
+        }
+    }
 
-    for (y = 0U; y < copy_h; y++) {
-        memcpy(dst, src, copy_w * sizeof(lv_color_t));
-        src += src_w;
-        dst += LTDC_WIDTH;
+    if (lv_disp_flush_is_last(disp_drv)) {
+        lvgl_swap_on_vblank();
+        s_frame_started = 0U;
     }
 
     lv_disp_flush_ready(disp_drv);
@@ -72,17 +111,17 @@ void LVGL_Port_Init(void)
 {
     lv_obj_t *label;
 
-    if (s_is_initialized != 0U) {
-        return;
-    }
+    if (s_is_initialized != 0U) return;
 
     lv_init();
 
-    HAL_LTDC_SetAddress(&hltdc, (uint32_t)LCD_FRAME_BUFFER, 0);
+    s_front_fb = LV_PORT_FB0;
+    s_back_fb = LV_PORT_FB1;
+    HAL_LTDC_SetAddress(&hltdc, (uint32_t)s_front_fb, 0);
     LCD_Clear(BLACK);
+    lvgl_copy_framebuffer(s_back_fb, s_front_fb);
 
     lv_disp_draw_buf_init(&s_disp_draw_buf, s_draw_buf1, s_draw_buf2, LV_PORT_BUFFER_PIXELS);
-
     lv_disp_drv_init(&s_disp_drv);
     s_disp_drv.hor_res = LV_PORT_HOR_RES;
     s_disp_drv.ver_res = LV_PORT_VER_RES;
@@ -90,14 +129,13 @@ void LVGL_Port_Init(void)
     s_disp_drv.flush_cb = lvgl_flush_cb;
     s_disp_drv.direct_mode = 0;
     s_disp_drv.full_refresh = 0;
-
     lv_disp_drv_register(&s_disp_drv);
 
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
     lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
 
     label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, "LTDC SDRAM smoke test");
+    lv_label_set_text(label, "LTDC SDRAM double buffer test");
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 8);
 
@@ -122,7 +160,6 @@ uint32_t LVGL_Port_Task(void)
 
     if ((now - s_last_anim_tick) >= 33U) {
         s_last_anim_tick = now;
-
         s_box_x = (int16_t)(s_box_x + s_box_dx);
         if (s_box_x < 0) {
             s_box_x = 0;
@@ -131,15 +168,12 @@ uint32_t LVGL_Port_Task(void)
             s_box_x = (int16_t)(LV_PORT_HOR_RES - 80U);
             s_box_dx = -2;
         }
-
         if (s_box != NULL) {
             lv_obj_set_pos(s_box, s_box_x, (int16_t)((LV_PORT_VER_RES - 80U) / 2U));
         }
     }
 
     wait = lv_timer_handler();
-    if (wait > 10U) {
-        wait = 10U;
-    }
+    if (wait > 10U) wait = 10U;
     return wait;
 }
