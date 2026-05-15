@@ -1,26 +1,23 @@
-# LVGL Benchmark (Internal RAM first)
+# LVGL Benchmark (SDRAM Double Buffer)
 
 This project runs `lv_demo_benchmark()` on boot.
 
-LVGL working memory is now kept in internal RAM first:
+This variant uses two full-screen framebuffers in external SDRAM and swaps LTDC address only at vertical blanking.
 
-- LVGL heap is allocated in internal RAM
-- LVGL draw buffers are small partial buffers in internal RAM
-
-The display framebuffer still lives in external SDRAM because a full 480×640 RGB565 framebuffer cannot fit in on-chip RAM.
+LVGL heap remains in internal RAM.
 
 ## Memory layout used
 
 - `0xC0000000`: LTDC front framebuffer in external SDRAM
 - `0xC0096000`: LTDC back framebuffer in external SDRAM
 - LVGL heap: internal RAM, `128 KB`
-- LVGL draw buffers: internal RAM, `2 x 20 lines`
+- LVGL draw buffers: bound directly to the two full SDRAM framebuffers
 
 ## What was tuned for smoothness
 
-- Internal-RAM draw buffers
-- All flush regions are rendered to the SDRAM back framebuffer
-- LTDC address is swapped only on vertical blanking (reload event)
+- Two full external SDRAM framebuffers
+- Full-screen redraw each frame (`full_refresh = 1`)
+- LTDC address swap only on vertical blanking (reload event)
 - Reduced LVGL heap size to fit on-chip memory
 - Benchmark max-speed mode enabled
 - LVGL task handler uses adaptive delay in main loop

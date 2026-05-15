@@ -60,6 +60,10 @@ static void lvgl_swap_buffers_on_vblank(void)
 {
     lv_color_t *next_front = s_back_fb;
 
+    if (next_front == s_front_fb) {
+        return;
+    }
+
     s_ltdc_reload_done = 0U;
     __HAL_LTDC_CLEAR_FLAG(&hltdc, LTDC_FLAG_RR);
 
@@ -107,7 +111,7 @@ void LVGL_Port_Init(void)
 
     lv_init();
 
-    /* Keep both SDRAM framebuffers identical before the first swap. */
+    /* Start from identical framebuffers to avoid a garbage first swap. */
     lvgl_dma2d_copy(s_front_fb, s_back_fb, LV_PORT_HOR_RES, LV_PORT_VER_RES, LV_PORT_HOR_RES, LV_PORT_HOR_RES);
 
     lv_disp_draw_buf_init(&s_disp_draw_buf, s_draw_buf1, s_draw_buf2, LV_PORT_BUFFER_PIXELS);
