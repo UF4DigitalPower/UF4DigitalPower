@@ -37,7 +37,9 @@
 #include "st7701.h"
 
 /* USER CODE END Includes */
-
+#include "lvgl.h"
+#include "lv_demo_benchmark.h"
+#include "lv_port_disp.h"
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
@@ -46,8 +48,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-/* 1: static diagnostic (no lv_timer_handler), 0: run LVGL benchmark normally */
-#define TEAR_DIAG_STATIC_ONLY 0
 
 /* USER CODE END PD */
 
@@ -147,14 +147,15 @@ int main(void)
     Error_Handler();
   }
 
-  LCD_Init();
-  st7701Init();
-  HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
-  LCD_Clear(RED);
+  // LCD_Init();
+  // st7701Init();
+  // HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
+  // LCD_Clear(RED);
 
-  LCD_TestLoop();
-
-  // LCD_Display_Dir(1); //横屏
+  // LCD_TestLoop();
+  lv_init();
+  lv_port_disp_init();
+  lv_demo_benchmark();
 
 
   /* USER CODE END 2 */
@@ -163,6 +164,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    lv_task_handler();
+    HAL_Delay(5);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -297,7 +300,7 @@ void MPU_Config(void)
   MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
   MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
-  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
 
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */

@@ -15,12 +15,14 @@
 
 #include "lcd.h"
 #include "ltdc.h"
+#include "st7701.h"
 /*********************
  *      DEFINES
  *********************/
 
 #define MY_DISP_HOR_RES LTDC_WIDTH
 #define MY_DISP_VER_RES LTDC_HEIGHT
+
 #define MY_DISP_DRAW_BUF_LINES 40
 #define DISP_FLUSH_WAIT_TIMEOUT_MS 20U
 
@@ -44,7 +46,6 @@
 static void disp_init(void);
 
 static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p);
-static void disp_wait_for_safe_flush_window(int32_t y2);
 
 /**********************
  *  STATIC VARIABLES
@@ -92,8 +93,14 @@ void lv_port_disp_init(void)
 /*初始化您的显示器和所需的外围设备.*/
 static void disp_init(void)
 {
+    LCD_Init();
+    st7701Init();
     HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
-    LCD_Clear(BLACK);
+    /* LVGL uses panel-native portrait coordinates; disable extra rotate in LCD_Color_Fill. */
+    LCD_Display_Dir(1U);
+    LCD_EnableDoubleBuffer(1U);
+    LCD_Clear(RED);
+    LCD_PresentFrame();
 }
 
 volatile bool disp_flush_enabled = true;
@@ -107,23 +114,6 @@ void disp_enable_update(void)
 void disp_disable_update(void)
 {
     disp_flush_enabled = false;
-}
-
-static void disp_wait_for_safe_flush_window(int32_t y2)
-{
-    uint32_t start_tick = HAL_GetTick();
-
-    while (1) {
-        int32_t current_line = LTDC_GetCurrentVisibleLine();
-
-        if (current_line < 0 || current_line > y2) {
-            return;
-        }
-
-        if ((HAL_GetTick() - start_tick) >= DISP_FLUSH_WAIT_TIMEOUT_MS) {
-            return;
-        }
-    }
 }
 
 static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p){
@@ -147,16 +137,16 @@ static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_colo
     if (x2 >= MY_DISP_HOR_RES) x2 = MY_DISP_HOR_RES - 1;
     if (y2 >= MY_DISP_VER_RES) y2 = MY_DISP_VER_RES - 1;
 
-    disp_wait_for_safe_flush_window(y2);
-
-    // Use DMA2D accelerated function after the LTDC scanner has passed the updated area.
+    /* Draw into the back buffer, then present once per frame on the last flushed area. */
     LCD_Color_Fill((uint16_t)x1, (uint16_t)y1, (uint16_t)x2, (uint16_t)y2, (uint16_t*)color_p);
+    if (lv_disp_flush_is_last(disp_drv)) {
+        LCD_PresentFrame();
+    }
 
     lv_disp_flush_ready(disp_drv);
 }
 
 #else /*Enable this file at the top*/
 
-/*这个虚拟的 typedef 纯粹是为了沉默 -Wpedantic.*/
 typedef int keep_pedantic_happy;
 #endif
