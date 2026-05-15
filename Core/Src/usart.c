@@ -187,7 +187,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     PA11     ------> UART4_RX
     PA12     ------> UART4_TX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
+    GPIO_InitStruct.Pin = UART_TO_WIFI_RX_Pin|UART_TO_WIFI_TX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -221,7 +221,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     PB12     ------> UART5_RX
     PB13     ------> UART5_TX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13;
+    GPIO_InitStruct.Pin = UART_TO_PC_RX_Pin|UART_TO_PC_TX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -255,7 +255,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     PB14     ------> USART1_TX
     PB15     ------> USART1_RX
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_14|GPIO_PIN_15;
+    GPIO_InitStruct.Pin = UART_TO_POWER_TX_Pin|UART_TO_POWER_RX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -283,7 +283,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     PA11     ------> UART4_RX
     PA12     ------> UART4_TX
     */
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_11|GPIO_PIN_12);
+    HAL_GPIO_DeInit(GPIOA, UART_TO_WIFI_RX_Pin|UART_TO_WIFI_TX_Pin);
 
   /* USER CODE BEGIN UART4_MspDeInit 1 */
 
@@ -301,7 +301,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     PB12     ------> UART5_RX
     PB13     ------> UART5_TX
     */
-    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_12|GPIO_PIN_13);
+    HAL_GPIO_DeInit(GPIOB, UART_TO_PC_RX_Pin|UART_TO_PC_TX_Pin);
 
   /* USER CODE BEGIN UART5_MspDeInit 1 */
 
@@ -319,7 +319,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     PB14     ------> USART1_TX
     PB15     ------> USART1_RX
     */
-    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_14|GPIO_PIN_15);
+    HAL_GPIO_DeInit(GPIOB, UART_TO_POWER_TX_Pin|UART_TO_POWER_RX_Pin);
 
   /* USER CODE BEGIN USART1_MspDeInit 1 */
 

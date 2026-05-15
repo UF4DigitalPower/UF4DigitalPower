@@ -31,6 +31,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "lcd.h"
+#include "lvgl_port.h"
+#include "st7701.h"
 
 /* USER CODE END Includes */
 
@@ -41,6 +44,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+/* 1: static diagnostic (no lv_timer_handler), 0: run LVGL benchmark normally */
+#define TEAR_DIAG_STATIC_ONLY 0
 
 /* USER CODE END PD */
 
@@ -59,6 +65,8 @@
 void SystemClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
+static void LCD_ShowDemo(void);
+static void LCD_UpdateRunMarker(void);
 
 /* USER CODE END PFP */
 
@@ -113,6 +121,33 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
+  if (HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  LCD_Init();
+  st7701Init();
+  HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
+  LCD_Display_Dir(0); //横屏
+
+#if TEAR_DIAG_STATIC_ONLY
+  LCD_ShowDemo();
+#else
+  LCD_Clear(BLACK);
+  LVGL_Port_RunBenchmark();
+#endif
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -122,6 +157,20 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#if TEAR_DIAG_STATIC_ONLY
+    HAL_Delay(20);
+#else
+    uint32_t wait_ms = LVGL_Port_Task();
+    if (wait_ms < 1U)
+    {
+      wait_ms = 1U;
+    }
+    else if (wait_ms > 5U)
+    {
+      wait_ms = 5U;
+    }
+    HAL_Delay(wait_ms);
+#endif
   }
   /* USER CODE END 3 */
 }
@@ -186,6 +235,50 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+static void LCD_ShowDemo(void)
+{
+  uint16_t i;
+
+  LCD_Clear(BLACK);
+
+  /* LANDSCAPE V3: top=red, right=green, bottom=blue, left=yellow. */
+  LCD_Rect_Fill(0, 0, LCD_LOGICAL_WIDTH, 42, RED);
+  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 42, 0, 42, LCD_LOGICAL_HEIGHT, GREEN);
+  LCD_Rect_Fill(0, LCD_LOGICAL_HEIGHT - 42, LCD_LOGICAL_WIDTH, 42, BLUE);
+  LCD_Rect_Fill(0, 0, 42, LCD_LOGICAL_HEIGHT, YELLOW);
+
+  LCD_Rect_Fill(64, 64, 96, 96, RED);
+  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 160, 64, 96, 96, GREEN);
+  LCD_Rect_Fill(64, LCD_LOGICAL_HEIGHT - 160, 96, 96, BLUE);
+  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 160, LCD_LOGICAL_HEIGHT - 160, 96, 96, WHITE);
+
+  LCD_Rect_Fill(150, 215, 300, 50, WHITE);
+  for (i = 0; i < 90; i += 6)
+  {
+    LCD_Rect_Fill(450 + (i / 2U), 170 + i, 6, 140 - i * 2U, WHITE);
+  }
+
+  LCD_Rect_Fill(210, 130, 40, 70, MAGENTA);
+  LCD_Rect_Fill(210, 130, 140, 34, MAGENTA);
+  LCD_Rect_Fill(310, 130, 40, 150, MAGENTA);
+  LCD_Rect_Fill(210, 250, 140, 34, MAGENTA);
+
+  POINT_COLOR = CYAN;
+  LCD_DrawLine(0, 0, LCD_LOGICAL_WIDTH - 1, LCD_LOGICAL_HEIGHT - 1);
+  LCD_DrawLine(LCD_LOGICAL_WIDTH - 1, 0, 0, LCD_LOGICAL_HEIGHT - 1);
+  POINT_COLOR = WHITE;
+  LCD_DrawRectangle(38, 38, LCD_LOGICAL_WIDTH - 39, LCD_LOGICAL_HEIGHT - 39);
+}
+
+static void LCD_UpdateRunMarker(void)
+{
+  static uint8_t state = 0;
+  static const uint16_t colors[] = {RED, GREEN, BLUE, WHITE};
+
+  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 112, LCD_LOGICAL_HEIGHT - 112, 64, 64, colors[state]);
+  state = (uint8_t)((state + 1U) & 0x03U);
+}
+
 /* USER CODE END 4 */
 
  /* MPU Configuration */
@@ -201,11 +294,11 @@ void MPU_Config(void)
   */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  MPU_InitStruct.BaseAddress = 0x0;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_4GB;
-  MPU_InitStruct.SubRegionDisable = 0x87;
+  MPU_InitStruct.BaseAddress = 0xC0000000;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_32MB;
+  MPU_InitStruct.SubRegionDisable = 0x0;
   MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
   MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
   MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
