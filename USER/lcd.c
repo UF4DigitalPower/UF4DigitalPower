@@ -13,6 +13,8 @@
 
 #define LCD_PANEL_WIDTH   480U
 #define LCD_PANEL_HEIGHT  640U
+#define LCD_CACHE_LINE    32U
+#define LCD_DMA2D_TIMEOUT 0x1FFFFFU
 
 //LCD的画笔颜色和背景色
 uint32_t POINT_COLOR = 0xFF000000; //画笔颜色
@@ -25,6 +27,11 @@ _lcd_dev lcddev = { .id = 0X7701, .width = LCD_LOGICAL_WIDTH, .height = LCD_LOGI
 
 uint16_t *const ltdc_lcd_framebuf = (uint16_t *)LCD_FRAME_BUFFER;
 
+static uint16_t *lcd_front_framebuf = (uint16_t *)SDRAM_LCD_BUF1;
+static uint16_t *lcd_back_framebuf  = (uint16_t *)SDRAM_LCD_BUF2;
+static uint16_t *lcd_draw_framebuf  = (uint16_t *)SDRAM_LCD_BUF1;
+static uint8_t lcd_double_buffer_enabled = 0U;
+
 static inline uint16_t LCD_PhysicalWidth(void)
 {
 	return LCD_PANEL_WIDTH;
@@ -35,77 +42,213 @@ static inline uint16_t LCD_PhysicalHeight(void)
 	return LCD_PANEL_HEIGHT;
 }
 
-static void LCD_DMA2D_WaitTransferComplete(void)
+static inline uint16_t *LCD_DrawBuffer(void)
 {
-	uint32_t timeout = 0;
+	return lcd_draw_framebuf;
+}
 
-	while ((DMA2D->ISR & DMA2D_ISR_TCIF) == 0U) {
-		timeout++;
-		if (timeout > 0x1FFFFFU) {
+static inline uint32_t LCD_RawOffset(uint16_t x, uint16_t y)
+{
+	return (uint32_t)LCD_PhysicalWidth() * y + x;
+}
+
+static void LCD_CleanDCacheByAddr(const void *addr, uint32_t size)
+{
+	if (addr == NULL || size == 0U) {
+		return;
+	}
+
+	uint32_t start = (uint32_t)addr & ~(LCD_CACHE_LINE - 1U);
+	uint32_t end = ((uint32_t)addr + size + LCD_CACHE_LINE - 1U) & ~(LCD_CACHE_LINE - 1U);
+	SCB_CleanDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
+	__DSB();
+	__ISB();
+}
+
+static void LCD_InvalidateDCacheByAddr(const void *addr, uint32_t size)
+{
+	if (addr == NULL || size == 0U) {
+		return;
+	}
+
+	uint32_t start = (uint32_t)addr & ~(LCD_CACHE_LINE - 1U);
+	uint32_t end = ((uint32_t)addr + size + LCD_CACHE_LINE - 1U) & ~(LCD_CACHE_LINE - 1U);
+	SCB_InvalidateDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
+	__DSB();
+	__ISB();
+}
+
+static void LCD_CleanFrameBuffer(uint16_t *fb)
+{
+	LCD_CleanDCacheByAddr(fb, LTDC_FRAME_BYTES);
+}
+
+static void LCD_WaitForDma2dIdle(void)
+{
+	uint32_t timeout = 0U;
+
+	while ((DMA2D->CR & DMA2D_CR_START) != 0U) {
+		if (++timeout > LCD_DMA2D_TIMEOUT) {
 			break;
 		}
 	}
-	DMA2D->IFCR |= DMA2D_IFCR_CTCIF;
 }
 
-static void LCD_DMA2D_FillRectRaw(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint32_t color)
+static void LCD_DMA2D_WaitTransferComplete(void)
 {
+	uint32_t timeout = 0U;
+
+	while ((DMA2D->ISR & DMA2D_ISR_TCIF) == 0U) {
+		if (++timeout > LCD_DMA2D_TIMEOUT) {
+			break;
+		}
+	}
+	DMA2D->IFCR = DMA2D_IFCR_CTCIF | DMA2D_IFCR_CTEIF | DMA2D_IFCR_CTWIF | DMA2D_IFCR_CCAEIF | DMA2D_IFCR_CCTCIF | DMA2D_IFCR_CCEIF;
+	LCD_WaitForDma2dIdle();
+}
+
+static void LCD_ClipRawRect(uint16_t *x, uint16_t *y, uint16_t *width, uint16_t *height)
+{
+	if (*x >= LCD_PhysicalWidth() || *y >= LCD_PhysicalHeight()) {
+		*width = 0U;
+		*height = 0U;
+		return;
+	}
+
+	if ((uint32_t)*x + *width > LCD_PhysicalWidth()) {
+		*width = (uint16_t)(LCD_PhysicalWidth() - *x);
+	}
+	if ((uint32_t)*y + *height > LCD_PhysicalHeight()) {
+		*height = (uint16_t)(LCD_PhysicalHeight() - *y);
+	}
+}
+
+static void LCD_DMA2D_FillRectTo(uint16_t *dst, uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint32_t color)
+{
+	if (dst == NULL || width == 0U || height == 0U) {
+		return;
+	}
+
+	LCD_ClipRawRect(&x, &y, &width, &height);
 	if (width == 0U || height == 0U) {
 		return;
 	}
 
-	if (x >= LCD_PhysicalWidth() || y >= LCD_PhysicalHeight()) {
-		return;
-	}
+	uint32_t dst_addr = (uint32_t)&dst[LCD_RawOffset(x, y)];
+	uint32_t dst_span = ((uint32_t)(height - 1U) * LCD_PhysicalWidth() + width) * LTDC_PIXSIZE;
 
-	if ((uint32_t)x + width > LCD_PhysicalWidth()) {
-		width = (uint16_t)(LCD_PhysicalWidth() - x);
-	}
-	if ((uint32_t)y + height > LCD_PhysicalHeight()) {
-		height = (uint16_t)(LCD_PhysicalHeight() - y);
-	}
+	LCD_CleanDCacheByAddr((void *)dst_addr, dst_span);
 
-	RCC->AHB1ENR |= 1 << 23;
-	DMA2D->CR &= ~DMA2D_CR_START;
+	RCC->AHB1ENR |= 1U << 23;
+	LCD_WaitForDma2dIdle();
+	DMA2D->IFCR = DMA2D_IFCR_CTCIF | DMA2D_IFCR_CTEIF | DMA2D_IFCR_CTWIF | DMA2D_IFCR_CCAEIF | DMA2D_IFCR_CCTCIF | DMA2D_IFCR_CCEIF;
 	DMA2D->CR = 3U << 16; /* R2M */
 	DMA2D->OPFCCR = LTDC_PIXEL_FORMAT_RGB565;
 	DMA2D->OOR = LCD_PhysicalWidth() - width;
-	DMA2D->OMAR = (uint32_t)ltdc_lcd_framebuf + (uint32_t)LTDC_PIXSIZE * (LCD_PhysicalWidth() * y + x);
+	DMA2D->OMAR = dst_addr;
 	DMA2D->NLR = (uint32_t)height | ((uint32_t)width << 16);
 	DMA2D->OCOLR = color;
 	DMA2D->CR |= DMA2D_CR_START;
 	LCD_DMA2D_WaitTransferComplete();
+
+	LCD_InvalidateDCacheByAddr((void *)dst_addr, dst_span);
 }
 
-static void LCD_DMA2D_CopyRectRaw(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *color)
+static void LCD_DMA2D_CopyRectTo(uint16_t *dst, uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *color)
 {
-	if (width == 0U || height == 0U || color == NULL) {
+	if (dst == NULL || width == 0U || height == 0U || color == NULL) {
 		return;
 	}
 
-	if (x >= LCD_PhysicalWidth() || y >= LCD_PhysicalHeight()) {
+	LCD_ClipRawRect(&x, &y, &width, &height);
+	if (width == 0U || height == 0U) {
 		return;
 	}
 
-	if ((uint32_t)x + width > LCD_PhysicalWidth()) {
-		width = (uint16_t)(LCD_PhysicalWidth() - x);
-	}
-	if ((uint32_t)y + height > LCD_PhysicalHeight()) {
-		height = (uint16_t)(LCD_PhysicalHeight() - y);
-	}
+	uint32_t dst_addr = (uint32_t)&dst[LCD_RawOffset(x, y)];
+	uint32_t dst_span = ((uint32_t)(height - 1U) * LCD_PhysicalWidth() + width) * LTDC_PIXSIZE;
+	uint32_t src_span = (uint32_t)width * height * LTDC_PIXSIZE;
 
-	RCC->AHB1ENR |= 1 << 23;
-	__HAL_DMA2D_CLEAR_FLAG(&hdma2d, DMA2D_FLAG_TC);
-	DMA2D->CR &= ~DMA2D_CR_START;
+	LCD_CleanDCacheByAddr(color, src_span);
+	LCD_CleanDCacheByAddr((void *)dst_addr, dst_span);
+
+	RCC->AHB1ENR |= 1U << 23;
+	LCD_WaitForDma2dIdle();
+	DMA2D->IFCR = DMA2D_IFCR_CTCIF | DMA2D_IFCR_CTEIF | DMA2D_IFCR_CTWIF | DMA2D_IFCR_CCAEIF | DMA2D_IFCR_CCTCIF | DMA2D_IFCR_CCEIF;
 	DMA2D->CR = DMA2D_M2M;
 	DMA2D->FGPFCCR = LTDC_PIXEL_FORMAT_RGB565;
 	DMA2D->FGOR = 0;
 	DMA2D->OOR = LCD_PhysicalWidth() - width;
 	DMA2D->FGMAR = (uint32_t)color;
-	DMA2D->OMAR = (uint32_t)ltdc_lcd_framebuf + (uint32_t)LTDC_PIXSIZE * (LCD_PhysicalWidth() * y + x);
+	DMA2D->OMAR = dst_addr;
 	DMA2D->NLR = (uint32_t)height | ((uint32_t)width << 16);
 	DMA2D->CR |= DMA2D_CR_START;
 	LCD_DMA2D_WaitTransferComplete();
+
+	LCD_InvalidateDCacheByAddr((void *)dst_addr, dst_span);
+}
+
+static void LCD_DMA2D_CopyFrame(uint16_t *dst, const uint16_t *src)
+{
+	if (dst == NULL || src == NULL || dst == src) {
+		return;
+	}
+
+	LCD_CleanDCacheByAddr(src, LTDC_FRAME_BYTES);
+	LCD_CleanDCacheByAddr(dst, LTDC_FRAME_BYTES);
+
+	RCC->AHB1ENR |= 1U << 23;
+	LCD_WaitForDma2dIdle();
+	DMA2D->IFCR = DMA2D_IFCR_CTCIF | DMA2D_IFCR_CTEIF | DMA2D_IFCR_CTWIF | DMA2D_IFCR_CCAEIF | DMA2D_IFCR_CCTCIF | DMA2D_IFCR_CCEIF;
+	DMA2D->CR = DMA2D_M2M;
+	DMA2D->FGPFCCR = LTDC_PIXEL_FORMAT_RGB565;
+	DMA2D->FGOR = 0;
+	DMA2D->OOR = 0;
+	DMA2D->FGMAR = (uint32_t)src;
+	DMA2D->OMAR = (uint32_t)dst;
+	DMA2D->NLR = (uint32_t)LCD_PhysicalHeight() | ((uint32_t)LCD_PhysicalWidth() << 16);
+	DMA2D->CR |= DMA2D_CR_START;
+	LCD_DMA2D_WaitTransferComplete();
+
+	LCD_InvalidateDCacheByAddr(dst, LTDC_FRAME_BYTES);
+}
+
+static void LCD_WaitForVBlank(void)
+{
+	uint32_t timeout = 0x3FFFFU;
+	uint32_t y;
+
+	/* 先等进入一次有效显示区，再等离开有效显示区，避免正好在消隐尾部切地址。 */
+	do {
+		y = (LTDC->CPSR & LTDC_CPSR_CYPOS_Msk) >> LTDC_CPSR_CYPOS_Pos;
+		if (timeout-- == 0U) {
+			return;
+		}
+	} while ((y < hltdc.Init.AccumulatedVBP) || (y >= hltdc.Init.AccumulatedActiveH));
+
+	timeout = 0x3FFFFU;
+	do {
+		y = (LTDC->CPSR & LTDC_CPSR_CYPOS_Msk) >> LTDC_CPSR_CYPOS_Pos;
+		if (timeout-- == 0U) {
+			return;
+		}
+	} while ((y >= hltdc.Init.AccumulatedVBP) && (y < hltdc.Init.AccumulatedActiveH));
+}
+
+static void LCD_LogicalRectToRaw(uint16_t sx, uint16_t sy, uint16_t width, uint16_t height,
+								 uint16_t *rx, uint16_t *ry, uint16_t *rw, uint16_t *rh)
+{
+	if (lcddev.dir == 0U) {
+		*rx = sx;
+		*ry = sy;
+		*rw = width;
+		*rh = height;
+	} else {
+		*rx = sy;
+		*ry = (uint16_t)(LCD_PhysicalHeight() - sx - width);
+		*rw = height;
+		*rh = width;
+	}
 }
 
 
@@ -115,11 +258,11 @@ void LTDC_Draw_Point(uint16_t x, uint16_t y, uint32_t color) {
 	}
 
 	if (lcddev.dir == 0U) {
-		ltdc_lcd_framebuf[(uint32_t)y * LCD_PhysicalWidth() + x] = (uint16_t)color;
+		LCD_DrawBuffer()[(uint32_t)y * LCD_PhysicalWidth() + x] = (uint16_t)color;
 	} else {
 		const uint16_t fb_x = y;
 		const uint16_t fb_y = (uint16_t)(LCD_PhysicalHeight() - 1U - x);
-		ltdc_lcd_framebuf[(uint32_t)fb_y * LCD_PhysicalWidth() + fb_x] = (uint16_t)color;
+		LCD_DrawBuffer()[(uint32_t)fb_y * LCD_PhysicalWidth() + fb_x] = (uint16_t)color;
 	}
 }
 
@@ -152,49 +295,90 @@ void LCD_Init(void) {
 	lcddev.width = LCD_PhysicalWidth();
 	lcddev.height = LCD_PhysicalHeight();
 	lcddev.pixsize = LTDC_PIXSIZE;
+	lcd_front_framebuf = (uint16_t *)SDRAM_LCD_BUF1;
+	lcd_back_framebuf = (uint16_t *)SDRAM_LCD_BUF2;
+	lcd_draw_framebuf = lcd_front_framebuf;
+	lcd_double_buffer_enabled = 0U;
 //			LTDC_PanelID_Read();
 	printf("LCD ID:%#x\r\n", lcddev.id);
 }
 
+void LCD_EnableDoubleBuffer(uint8_t enable)
+{
+	if (enable != 0U) {
+		if (lcd_double_buffer_enabled == 0U) {
+			lcd_front_framebuf = (uint16_t *)SDRAM_LCD_BUF1;
+			lcd_back_framebuf = (uint16_t *)SDRAM_LCD_BUF2;
+			lcd_draw_framebuf = lcd_back_framebuf;
+			LCD_DMA2D_CopyFrame(lcd_draw_framebuf, lcd_front_framebuf);
+			lcd_double_buffer_enabled = 1U;
+		}
+		return;
+	}
+
+	if (lcd_double_buffer_enabled != 0U) {
+		LCD_PresentFrame();
+		lcd_draw_framebuf = lcd_front_framebuf;
+		lcd_double_buffer_enabled = 0U;
+	}
+}
+
+void LCD_PresentFrame(void)
+{
+	if (lcd_double_buffer_enabled == 0U) {
+		LCD_CleanFrameBuffer(lcd_draw_framebuf);
+		return;
+	}
+
+	LCD_CleanFrameBuffer(lcd_draw_framebuf);
+	LCD_WaitForVBlank();
+	HAL_LTDC_SetAddress(&hltdc, (uint32_t)lcd_draw_framebuf, 0);
+
+	lcd_front_framebuf = lcd_draw_framebuf;
+	lcd_draw_framebuf = (lcd_front_framebuf == (uint16_t *)SDRAM_LCD_BUF1) ?
+					  (uint16_t *)SDRAM_LCD_BUF2 : (uint16_t *)SDRAM_LCD_BUF1;
+
+	/* 让下一帧从刚显示的完整画面开始，适合裸屏局部擦除/局部重绘。 */
+	LCD_DMA2D_CopyFrame(lcd_draw_framebuf, lcd_front_framebuf);
+}
+
 void LCD_Clear(uint32_t color) {
-	LCD_DMA2D_FillRectRaw(0, 0, LCD_PhysicalWidth(), LCD_PhysicalHeight(), color);
+	LCD_DMA2D_FillRectTo(LCD_DrawBuffer(), 0, 0, LCD_PhysicalWidth(), LCD_PhysicalHeight(), color);
 }
 
 void LCD_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color)
 {
-	if (sx > ex || sy > ey) {
+	if (sx > ex || sy > ey || sx >= lcddev.width || sy >= lcddev.height) {
 		return;
 	}
 
-	if (lcddev.dir == 0U) {
-		LCD_DMA2D_FillRectRaw(sx, sy, (uint16_t)(ex - sx + 1U), (uint16_t)(ey - sy + 1U), color);
-		return;
+	if (ex >= lcddev.width) {
+		ex = (uint16_t)(lcddev.width - 1U);
+	}
+	if (ey >= lcddev.height) {
+		ey = (uint16_t)(lcddev.height - 1U);
 	}
 
-	for (uint16_t y = sy; y <= ey; y++) {
-		for (uint16_t x = sx; x <= ex; x++) {
-			LTDC_Draw_Point(x, y, color);
-		}
-	}
+	uint16_t rx, ry, rw, rh;
+	LCD_LogicalRectToRaw(sx, sy, (uint16_t)(ex - sx + 1U), (uint16_t)(ey - sy + 1U), &rx, &ry, &rw, &rh);
+	LCD_DMA2D_FillRectTo(LCD_DrawBuffer(), rx, ry, rw, rh, color);
 }
 
 void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color) {
-	if (sx >= lcddev.width || sy >= lcddev.height || ex == 0 || ey == 0) {
+	if (sx >= lcddev.width || sy >= lcddev.height || ex == 0U || ey == 0U) {
 		return;
 	}
 
-	if (lcddev.dir == 0U) {
-		LCD_DMA2D_FillRectRaw(sx, sy, ex, ey, color);
-		return;
+	if ((uint32_t)sx + ex > lcddev.width) {
+		ex = (uint16_t)(lcddev.width - sx);
+	}
+	if ((uint32_t)sy + ey > lcddev.height) {
+		ey = (uint16_t)(lcddev.height - sy);
 	}
 
-	const uint16_t pex = (uint16_t)(sx + ex - 1U);
-	const uint16_t pey = (uint16_t)(sy + ey - 1U);
-	for (uint16_t y = sy; y <= pey; y++) {
-		for (uint16_t x = sx; x <= pex; x++) {
-			LTDC_Draw_Point(x, y, color);
-		}
-	}
+	uint16_t rx, ry, rw, rh;
+	LCD_LogicalRectToRaw(sx, sy, ex, ey, &rx, &ry, &rw, &rh);
+	LCD_DMA2D_FillRectTo(LCD_DrawBuffer(), rx, ry, rw, rh, color);
 }
 
 void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color) {
@@ -213,13 +397,33 @@ void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t
 		pex = ey;
 		pey = lcddev.height - sx - 1;
 	}
-	LCD_DMA2D_CopyRectRaw((uint16_t)psx, (uint16_t)psy, (uint16_t)(pex - psx + 1U), (uint16_t)(pey - psy + 1U), color);
+	LCD_DMA2D_CopyRectTo(LCD_DrawBuffer(), (uint16_t)psx, (uint16_t)psy, (uint16_t)(pex - psx + 1U), (uint16_t)(pey - psy + 1U), color);
 }
 
 //画线
 //x1,y1:起点坐标
 //x2,y2:终点坐标
 void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
+	if (x1 == x2) {
+		if (y1 > y2) {
+			uint16_t t = y1;
+			y1 = y2;
+			y2 = t;
+		}
+		LCD_Fill(x1, y1, x2, y2, POINT_COLOR);
+		return;
+	}
+
+	if (y1 == y2) {
+		if (x1 > x2) {
+			uint16_t t = x1;
+			x1 = x2;
+		x2 = t;
+		}
+		LCD_Fill(x1, y1, x2, y2, POINT_COLOR);
+		return;
+	}
+
 	uint16_t t;
 	int xerr = 0, yerr = 0, delta_x, delta_y, distance;
 	int incx, incy, uRow, uCol;
@@ -383,9 +587,11 @@ void LCD_TestLoop(void)
 	uint32_t frame = 0U;
 
 	LCD_Display_Dir(0);
+	LCD_EnableDoubleBuffer(1U);
 	LCD_Clear(bg);
 	POINT_COLOR = WHITE;
 	LCD_DrawRectangle(0, 0, lcddev.width - 1U, lcddev.height - 1U);
+	LCD_PresentFrame();
 
 	while (1) {
 		uint16_t box_color = palette[(frame >> 3U) & 0x07U];
@@ -428,8 +634,7 @@ void LCD_TestLoop(void)
 		/* Sweep a moving horizontal marker to verify per-line update behavior. */
 		LCD_Rect_Fill(2, (uint16_t)(2U + ((frame * 3U) % (lcddev.height - 4U))), lcddev.width - 4U, 2, palette[(frame >> 2U) & 0x07U]);
 
+		LCD_PresentFrame();
 		frame++;
-		HAL_Delay(16);
 	}
 }
-
