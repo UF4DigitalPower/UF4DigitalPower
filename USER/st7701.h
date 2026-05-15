@@ -6,13 +6,10 @@
 #define STM32H750_COM_ST7701_H
 
 #include "main.h"
-#include <stdbool.h>
-
-
 
 extern SPI_HandleTypeDef hspi6;
 
-bool st7701Init(void);
+HAL_StatusTypeDef st7701Init(void);
 
 
 #endif //STM32H750_COM_ST7701_H

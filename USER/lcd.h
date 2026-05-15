@@ -96,6 +96,7 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 #define LTDC_WIDTH 480
 #define LTDC_HEIGHT 640
 #define LTDC_PIXSIZE 2
+#define LTDC_FRAME_BYTES (LTDC_WIDTH * LTDC_HEIGHT * LTDC_PIXSIZE)
 #define LCD_FRAME_BUFFER SDRAM_LCD_BUF1
 extern uint16_t *const ltdc_lcd_framebuf;
 
@@ -106,6 +107,9 @@ void LCD_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color
 void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t color); //按宽高填充
 void LCD_Font(uint16_t x, uint16_t y, const char *text, const GFXfont *p_font, uint8_t size, uint32_t color24);
 void LCD_Display_Dir(uint8_t dir);                                      //设置显示方向
+void LCD_EnableDoubleBuffer(uint8_t enable);                             //启用/关闭裸屏双缓冲
+void LCD_PresentFrame(void);                                             //提交后台帧到LTDC
+void LCD_TestLoop(void);                                                //裸屏循环测试
 void LCD_DrawPoint(uint16_t x, uint16_t y);                              //画点
 void LCD_Draw_Circle(uint16_t x0, uint16_t y0, uint8_t r);               //画圆
 void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);   //画线

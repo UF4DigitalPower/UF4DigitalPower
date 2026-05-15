@@ -199,7 +199,6 @@ void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t 
 
 void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color) {
 	uint32_t psx, psy, pex, pey; //以LCD面板为基准的坐标系,不随横竖屏变化而变化
-	uint32_t addr;
 	//坐标系转换
 	if (lcddev.dir) //横屏
 	{
@@ -214,7 +213,6 @@ void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t
 		pex = ey;
 		pey = lcddev.height - sx - 1;
 	}
-	addr = ((uint32_t) ltdc_lcd_framebuf + lcddev.pixsize * (lcddev.width * psy + psx));
 	LCD_DMA2D_CopyRectRaw((uint16_t)psx, (uint16_t)psy, (uint16_t)(pex - psx + 1U), (uint16_t)(pey - psy + 1U), color);
 }
 
@@ -364,6 +362,74 @@ void LCD_Font(uint16_t x, uint16_t y, const char *text, const GFXfont *p_font, u
 			LCD_Char(cursor_x, cursor_y, &glyph, &font, size, color24);
 			cursor_x += glyph.xAdvance * size;
 		}
+	}
+}
+
+void LCD_TestLoop(void)
+{
+	static const uint16_t palette[] = {RED, GREEN, BLUE, YELLOW, CYAN, MAGENTA, WHITE, 0xFD20U};
+	const int16_t box_w = 96;
+	const int16_t box_h = 72;
+	const int16_t ball_r = 26;
+	const uint16_t bg = BLACK;
+	int16_t box_x = 16;
+	int16_t box_y = 16;
+	int16_t ball_x = (int16_t)(lcddev.width / 2U);
+	int16_t ball_y = (int16_t)(lcddev.height / 2U);
+	int16_t box_vx = 5;
+	int16_t box_vy = 4;
+	int16_t ball_vx = -4;
+	int16_t ball_vy = 6;
+	uint32_t frame = 0U;
+
+	LCD_Display_Dir(0);
+	LCD_Clear(bg);
+	POINT_COLOR = WHITE;
+	LCD_DrawRectangle(0, 0, lcddev.width - 1U, lcddev.height - 1U);
+
+	while (1) {
+		uint16_t box_color = palette[(frame >> 3U) & 0x07U];
+		uint16_t ball_color = palette[(frame >> 4U) & 0x07U];
+		int16_t prev_box_x = box_x;
+		int16_t prev_box_y = box_y;
+		int16_t prev_ball_x = ball_x;
+		int16_t prev_ball_y = ball_y;
+
+		LCD_Rect_Fill((uint16_t)prev_box_x, (uint16_t)prev_box_y, (uint16_t)box_w, (uint16_t)box_h, bg);
+		POINT_COLOR = bg;
+		LCD_Draw_Circle((uint16_t)prev_ball_x, (uint16_t)prev_ball_y, (uint8_t)ball_r);
+
+		box_x += box_vx;
+		box_y += box_vy;
+		if (box_x <= 1 || (box_x + box_w) >= (int16_t)(lcddev.width - 1U)) {
+			box_vx = (int16_t)(-box_vx);
+			box_x += box_vx;
+		}
+		if (box_y <= 1 || (box_y + box_h) >= (int16_t)(lcddev.height - 1U)) {
+			box_vy = (int16_t)(-box_vy);
+			box_y += box_vy;
+		}
+
+		ball_x += ball_vx;
+		ball_y += ball_vy;
+		if ((ball_x - ball_r) <= 1 || (ball_x + ball_r) >= (int16_t)(lcddev.width - 1U)) {
+			ball_vx = (int16_t)(-ball_vx);
+			ball_x += ball_vx;
+		}
+		if ((ball_y - ball_r) <= 1 || (ball_y + ball_r) >= (int16_t)(lcddev.height - 1U)) {
+			ball_vy = (int16_t)(-ball_vy);
+			ball_y += ball_vy;
+		}
+
+		LCD_Rect_Fill((uint16_t)box_x, (uint16_t)box_y, (uint16_t)box_w, (uint16_t)box_h, box_color);
+		POINT_COLOR = ball_color;
+		LCD_Draw_Circle((uint16_t)ball_x, (uint16_t)ball_y, (uint8_t)ball_r);
+
+		/* Sweep a moving horizontal marker to verify per-line update behavior. */
+		LCD_Rect_Fill(2, (uint16_t)(2U + ((frame * 3U) % (lcddev.height - 4U))), lcddev.width - 4U, 2, palette[(frame >> 2U) & 0x07U]);
+
+		frame++;
+		HAL_Delay(16);
 	}
 }
 

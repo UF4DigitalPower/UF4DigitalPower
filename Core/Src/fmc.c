@@ -23,76 +23,83 @@
 
 /* USER CODE BEGIN 0 */
 
-#define SDRAM_TIMEOUT                   (0x1000U)
-/*
- * 32MB SDRAM, 13 row bits => 8192 refresh rows.
- * Current FMC/SDRAM clock is normally HCLK/2 = about 120MHz on this project.
- * Refresh count = 64ms * 120MHz / 8192 - 20 = about 917.
- * The old value 480 over-refreshed SDRAM heavily, stealing SDRAM bandwidth from LTDC.
- */
-#define SDRAM_REFRESH_COUNT             (917U)
+#define SDRAM_Size 32 * 1024 * 1024                                 //32M字节
+#define SDRAM_BANK_ADDR     ((uint32_t)0xC0000000) 				// FMC SDRAM 数据基地址
+#define FMC_COMMAND_TARGET_BANK   FMC_SDRAM_CMD_TARGET_BANK1	// SDRAM 的bank选择
+#define SDRAM_TIMEOUT     ((uint32_t)0x1000) 					// 超时判断时间
 
-#define SDRAM_MODEREG_BURST_LENGTH_1    ((uint16_t)0x0000)
-#define SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL ((uint16_t)0x0000)
-#define SDRAM_MODEREG_CAS_LATENCY_3     ((uint16_t)0x0030)
-#define SDRAM_MODEREG_OPERATING_MODE_STANDARD ((uint16_t)0x0000)
-#define SDRAM_MODEREG_WRITEBURST_MODE_SINGLE ((uint16_t)0x0200)
+#define SDRAM_MODEREG_BURST_LENGTH_1             ((uint16_t)0x0000)
+#define SDRAM_MODEREG_BURST_LENGTH_2             ((uint16_t)0x0001)
+#define SDRAM_MODEREG_BURST_LENGTH_4             ((uint16_t)0x0002)
+#define SDRAM_MODEREG_BURST_LENGTH_8             ((uint16_t)0x0004)
+#define SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL      ((uint16_t)0x0000)
+#define SDRAM_MODEREG_BURST_TYPE_INTERLEAVED     ((uint16_t)0x0008)
+#define SDRAM_MODEREG_CAS_LATENCY_2              ((uint16_t)0x0020)
+#define SDRAM_MODEREG_CAS_LATENCY_3              ((uint16_t)0x0030)
+#define SDRAM_MODEREG_OPERATING_MODE_STANDARD    ((uint16_t)0x0000)
+#define SDRAM_MODEREG_WRITEBURST_MODE_PROGRAMMED ((uint16_t)0x0000)
+#define SDRAM_MODEREG_WRITEBURST_MODE_SINGLE     ((uint16_t)0x0200)
 
-HAL_StatusTypeDef FMC_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram)
-{
-  FMC_SDRAM_CommandTypeDef command = {0};
-  uint32_t mode_reg = 0;
-  HAL_StatusTypeDef status;
-  uint32_t command_target;
+FMC_SDRAM_CommandTypeDef command;// 控制指令
 
-  command_target = (hsdram->Init.SDBank == FMC_SDRAM_BANK2) ?
-                   FMC_SDRAM_CMD_TARGET_BANK2 :
-                   FMC_SDRAM_CMD_TARGET_BANK1;
+/******************************************************************************************************
+*	函 数 名: SDRAM_Initialization_Sequence
+*	入口参数: hsdram - SDRAM_HandleTypeDef定义的变量，即表示定义的sdram
+*				 Command	- 控制指令
+*	返 回 值: 无
+*	函数功能: SDRAM 参数配置
+*	说    明: 配置SDRAM相关时序和控制方式
+*******************************************************************************************************/
+void SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_SDRAM_CommandTypeDef *Command) {
+	__IO uint32_t tmpmrd = 0;
 
-  command.CommandMode = FMC_SDRAM_CMD_CLK_ENABLE;
-  command.CommandTarget = command_target;
-  command.AutoRefreshNumber = 1;
-  command.ModeRegisterDefinition = 0;
-  status = HAL_SDRAM_SendCommand(hsdram, &command, SDRAM_TIMEOUT);
-  if (status != HAL_OK)
-  {
-    return status;
-  }
+	/* Configure a clock configuration enable command 时钟配置使能*/
+	Command->CommandMode 				= FMC_SDRAM_CMD_CLK_ENABLE;	// 开启SDRAM时钟
+	Command->CommandTarget 				= FMC_COMMAND_TARGET_BANK; 	// 选择要控制的区域
+	Command->AutoRefreshNumber 	    	= 1;
+	Command->ModeRegisterDefinition 	= 0;
 
-  HAL_Delay(1);
+	HAL_SDRAM_SendCommand(hsdram, Command, SDRAM_TIMEOUT);	// 发送控制指令
+	HAL_Delay(1);		// 延时等待，至少200us
 
-  command.CommandMode = FMC_SDRAM_CMD_PALL;
-  status = HAL_SDRAM_SendCommand(hsdram, &command, SDRAM_TIMEOUT);
-  if (status != HAL_OK)
-  {
-    return status;
-  }
+	/* Configure a PALL (precharge all) command 对所有存储区域预充电*/
+	Command->CommandMode 				= FMC_SDRAM_CMD_PALL;		// 预充电命令
+	Command->CommandTarget 				= FMC_COMMAND_TARGET_BANK;	// 选择要控制的区域
+	Command->AutoRefreshNumber 		    = 1;
+	Command->ModeRegisterDefinition 	= 0;
 
-  command.CommandMode = FMC_SDRAM_CMD_AUTOREFRESH_MODE;
-  command.AutoRefreshNumber = 8;
-  status = HAL_SDRAM_SendCommand(hsdram, &command, SDRAM_TIMEOUT);
-  if (status != HAL_OK)
-  {
-    return status;
-  }
+	HAL_SDRAM_SendCommand(hsdram, Command, SDRAM_TIMEOUT);  // 发送控制指令
 
-  mode_reg = SDRAM_MODEREG_BURST_LENGTH_1 |
-             SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL |
-             SDRAM_MODEREG_CAS_LATENCY_3 |
-             SDRAM_MODEREG_OPERATING_MODE_STANDARD |
-             SDRAM_MODEREG_WRITEBURST_MODE_SINGLE;
+	/* Configure a Auto-Refresh command 设置自动刷新次数*/
+	Command->CommandMode 				= FMC_SDRAM_CMD_AUTOREFRESH_MODE;	// 使用自动刷新
+	Command->CommandTarget 				= FMC_COMMAND_TARGET_BANK;          // 选择要控制的区域
+	Command->AutoRefreshNumber			= 8;                                // 自动刷新次数
+	Command->ModeRegisterDefinition 	= 0;
 
-  command.CommandMode = FMC_SDRAM_CMD_LOAD_MODE;
-  command.AutoRefreshNumber = 1;
-  command.ModeRegisterDefinition = mode_reg;
-  status = HAL_SDRAM_SendCommand(hsdram, &command, SDRAM_TIMEOUT);
-  if (status != HAL_OK)
-  {
-    return status;
-  }
+	HAL_SDRAM_SendCommand(hsdram, Command, SDRAM_TIMEOUT);	// 发送控制指令
 
-  status = HAL_SDRAM_ProgramRefreshRate(hsdram, SDRAM_REFRESH_COUNT);
-  return status;
+	/* Program the external memory mode register */
+	//配置模式寄存器，SDRAM的bit0-bit2为指定突发访问的长度
+	//bit3为指定突发访问的类型，bit4-bit6为CAS值，bit7和bit8为运行模式
+	//bit9为指定的写突发模式，bit10和bit11位保留位
+	tmpmrd = (uint32_t)SDRAM_MODEREG_BURST_LENGTH_2               |//设置突发长度：2（可以是1/2/4/8）
+							SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL   |//设置突发类型：连续（可以是连续/交错）
+							SDRAM_MODEREG_CAS_LATENCY_3           |//设置CAS值：3（可以是2/3）
+							SDRAM_MODEREG_OPERATING_MODE_STANDARD |//设置操作模式：0，标准模式
+							SDRAM_MODEREG_WRITEBURST_MODE_SINGLE;  //设置突发写模式：1，单点访问
+
+	Command->CommandMode            = FMC_SDRAM_CMD_LOAD_MODE;	// 加载模式寄存器命令
+	Command->CommandTarget          = FMC_COMMAND_TARGET_BANK;	// 选择要控制的区域
+	Command->AutoRefreshNumber 		= 1;
+	Command->ModeRegisterDefinition = tmpmrd;
+
+	HAL_SDRAM_SendCommand(hsdram, Command, SDRAM_TIMEOUT);	// 发送控制指令
+
+	//刷新频率计数器(以SDCLK频率计数),计算方法:
+	//COUNT=SDRAM刷新周期/行数-20=SDRAM刷新周期(us)*SDCLK频率(Mhz)/行数
+	//我们使用的SDRAM刷新周期为64ms,SDCLK=240/2=120Mhz,行数为8192(2^13).
+	//所以,COUNT=64*1000*120/8192-20=918(20为刷新等待冗余)
+	HAL_SDRAM_ProgramRefreshRate(hsdram, 918);  // 配置刷新率
 }
 
 /* USER CODE END 0 */
@@ -141,11 +148,7 @@ void MX_FMC_Init(void)
   }
 
   /* USER CODE BEGIN FMC_Init 2 */
-  if (FMC_SDRAM_Initialization_Sequence(&hsdram1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
+	SDRAM_Initialization_Sequence(&hsdram1,&command);
   /* USER CODE END FMC_Init 2 */
 }
 

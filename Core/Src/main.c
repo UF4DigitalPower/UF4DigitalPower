@@ -152,7 +152,8 @@ int main(void)
   HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
   LCD_Clear(RED);
 
-  LCD_DrawRectangle(10, 10, 100, 100);
+  LCD_TestLoop();
+
   // LCD_Display_Dir(1); //横屏
 
 
