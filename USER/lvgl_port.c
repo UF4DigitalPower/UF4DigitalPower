@@ -4,23 +4,22 @@
 #include "lcd.h"
 #include "lvgl.h"
 #include "ltdc.h"
-#include "lv_demo_benchmark.h"
+
 #include <stdint.h>
+#include <string.h>
 
 /*
- * The LTDC layer is the physical panel buffer: 480 x 640, RGB565.
- * The module is mounted/used as a 640 x 480 landscape display, and lcd.c maps
- * logical coordinates as:
- *   logical(x, y) -> physical(fb_x = y, fb_y = LTDC_HEIGHT - 1 - x)
+ * Stable baseline:
+ *   LTDC physical framebuffer is 480 x 640 RGB565.
+ *   LVGL renders directly in the same physical coordinate system.
+ *   No software rotation, no DMA2D, no double framebuffer, no LTDC reload.
  *
- * Therefore LVGL must render in the same logical coordinate system. Do not let
- * LVGL write a linear 480 x 640 framebuffer directly, or the output becomes
- * rotated/striped because the display orientation does not match the LTDC memory
- * layout.
+ * This deliberately avoids the previous rotated per-pixel flush. Rotated writes
+ * access SDRAM with a large stride and easily starve LTDC on a 16-bit SDRAM bus.
  */
-#define LV_PORT_HOR_RES        LCD_LOGICAL_WIDTH
-#define LV_PORT_VER_RES        LCD_LOGICAL_HEIGHT
-#define LV_PORT_BUF_LINES      20U
+#define LV_PORT_HOR_RES        LTDC_WIDTH
+#define LV_PORT_VER_RES        LTDC_HEIGHT
+#define LV_PORT_BUF_LINES      10U
 #define LV_PORT_BUFFER_PIXELS  (LV_PORT_HOR_RES * LV_PORT_BUF_LINES)
 
 static lv_disp_draw_buf_t s_disp_draw_buf;
@@ -29,63 +28,40 @@ static uint8_t s_is_initialized = 0U;
 static lv_color_t s_draw_buf1[LV_PORT_BUFFER_PIXELS];
 static lv_color_t s_draw_buf2[LV_PORT_BUFFER_PIXELS];
 
-static inline void lvgl_put_pixel_rotated(uint32_t x, uint32_t y, lv_color_t color)
-{
-    uint32_t fb_x;
-    uint32_t fb_y;
-    uint16_t *fb;
-
-    if (x >= LCD_LOGICAL_WIDTH || y >= LCD_LOGICAL_HEIGHT) {
-        return;
-    }
-
-    fb_x = y;
-    fb_y = (uint32_t)LTDC_HEIGHT - 1U - x;
-    fb = (uint16_t *)LCD_FRAME_BUFFER;
-    fb[(fb_y * LTDC_WIDTH) + fb_x] = color.full;
-}
-
 static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
 {
-    int32_t x;
-    int32_t y;
-    int32_t x1;
-    int32_t x2;
-    int32_t y1;
-    int32_t y2;
+    int32_t x1 = area->x1;
+    int32_t x2 = area->x2;
+    int32_t y1 = area->y1;
+    int32_t y2 = area->y2;
     uint32_t src_w;
-    lv_color_t *src_row;
-
-    x1 = area->x1;
-    x2 = area->x2;
-    y1 = area->y1;
-    y2 = area->y2;
+    uint32_t copy_w;
+    uint32_t copy_h;
+    uint32_t y;
+    lv_color_t *src;
+    uint16_t *dst;
 
     if (x2 < 0 || y2 < 0 || x1 >= (int32_t)LV_PORT_HOR_RES || y1 >= (int32_t)LV_PORT_VER_RES) {
         lv_disp_flush_ready(disp_drv);
         return;
     }
 
-    if (x1 < 0) {
-        x1 = 0;
-    }
-    if (y1 < 0) {
-        y1 = 0;
-    }
-    if (x2 >= (int32_t)LV_PORT_HOR_RES) {
-        x2 = (int32_t)LV_PORT_HOR_RES - 1;
-    }
-    if (y2 >= (int32_t)LV_PORT_VER_RES) {
-        y2 = (int32_t)LV_PORT_VER_RES - 1;
-    }
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x2 >= (int32_t)LV_PORT_HOR_RES) x2 = (int32_t)LV_PORT_HOR_RES - 1;
+    if (y2 >= (int32_t)LV_PORT_VER_RES) y2 = (int32_t)LV_PORT_VER_RES - 1;
 
     src_w = (uint32_t)(area->x2 - area->x1 + 1);
+    copy_w = (uint32_t)(x2 - x1 + 1);
+    copy_h = (uint32_t)(y2 - y1 + 1);
 
-    for (y = y1; y <= y2; y++) {
-        src_row = color_p + ((uint32_t)(y - area->y1) * src_w) + (uint32_t)(x1 - area->x1);
-        for (x = x1; x <= x2; x++) {
-            lvgl_put_pixel_rotated((uint32_t)x, (uint32_t)y, *src_row++);
-        }
+    src = color_p + ((uint32_t)(y1 - area->y1) * src_w) + (uint32_t)(x1 - area->x1);
+    dst = ((uint16_t *)LCD_FRAME_BUFFER) + ((uint32_t)y1 * LTDC_WIDTH) + (uint32_t)x1;
+
+    for (y = 0U; y < copy_h; y++) {
+        memcpy(dst, src, copy_w * sizeof(lv_color_t));
+        src += src_w;
+        dst += LTDC_WIDTH;
     }
 
     lv_disp_flush_ready(disp_drv);
@@ -120,7 +96,7 @@ void LVGL_Port_Init(void)
 void LVGL_Port_RunBenchmark(void)
 {
     LVGL_Port_Init();
-    lv_demo_benchmark_set_max_speed(true);
+    lv_demo_benchmark_set_max_speed(false);
     lv_demo_benchmark();
 }
 
