@@ -109,6 +109,7 @@ void LCD_Font(uint16_t x, uint16_t y, const char *text, const GFXfont *p_font, u
 void LCD_Display_Dir(uint8_t dir);                                      //设置显示方向
 void LCD_EnableDoubleBuffer(uint8_t enable);                             //启用/关闭裸屏双缓冲
 void LCD_PresentFrame(void);                                             //提交后台帧到LTDC
+void LCD_ScanoutFrame(uint16_t *framebuf);                              //直接切换LTDC扫描地址到指定帧缓冲
 void LCD_TestLoop(void);                                                //裸屏循环测试
 void LCD_DrawPoint(uint16_t x, uint16_t y);                              //画点
 void LCD_Draw_Circle(uint16_t x0, uint16_t y0, uint8_t r);               //画圆

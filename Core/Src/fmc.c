@@ -82,7 +82,7 @@ void SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_SDRAM_Comman
 	//配置模式寄存器，SDRAM的bit0-bit2为指定突发访问的长度
 	//bit3为指定突发访问的类型，bit4-bit6为CAS值，bit7和bit8为运行模式
 	//bit9为指定的写突发模式，bit10和bit11位保留位
-	tmpmrd = (uint32_t)SDRAM_MODEREG_BURST_LENGTH_2               |//设置突发长度：2（可以是1/2/4/8）
+  tmpmrd = (uint32_t)SDRAM_MODEREG_BURST_LENGTH_8               |//设置突发长度：8（可以是1/2/4/8）
 							SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL   |//设置突发类型：连续（可以是连续/交错）
 							SDRAM_MODEREG_CAS_LATENCY_3           |//设置CAS值：3（可以是2/3）
 							SDRAM_MODEREG_OPERATING_MODE_STANDARD |//设置操作模式：0，标准模式

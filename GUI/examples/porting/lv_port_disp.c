@@ -23,8 +23,7 @@
 #define MY_DISP_HOR_RES LTDC_WIDTH
 #define MY_DISP_VER_RES LTDC_HEIGHT
 
-#define MY_DISP_DRAW_BUF_LINES 40
-#define DISP_FLUSH_WAIT_TIMEOUT_MS 20U
+#define MY_DISP_FRAME_PIXELS ((uint32_t)MY_DISP_HOR_RES * (uint32_t)MY_DISP_VER_RES)
 
 //#ifndef MY_DISP_HOR_RES
 //    #warning Please define or replace the macro MY_DISP_HOR_RES with the actual screen width, default value 320 is used for now.
@@ -65,9 +64,9 @@ void lv_port_disp_init(void)
     disp_init();
 
     static lv_disp_draw_buf_t draw_buf_dsc;
-    static LV_ATTRIBUTE_LARGE_RAM_ARRAY lv_color_t buf_1[MY_DISP_HOR_RES * MY_DISP_DRAW_BUF_LINES];
-    static LV_ATTRIBUTE_LARGE_RAM_ARRAY lv_color_t buf_2[MY_DISP_HOR_RES * MY_DISP_DRAW_BUF_LINES];
-    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2, MY_DISP_HOR_RES * MY_DISP_DRAW_BUF_LINES);
+    static LV_ATTRIBUTE_LARGE_RAM_ARRAY lv_color_t *buf_1 = (lv_color_t *)SDRAM_LVGL_DRAW_BUF1;
+    static LV_ATTRIBUTE_LARGE_RAM_ARRAY lv_color_t *buf_2 = (lv_color_t *)SDRAM_LVGL_DRAW_BUF2;
+    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2, MY_DISP_FRAME_PIXELS);
 
     static lv_disp_drv_t disp_drv;                         /*Descriptor of a display driver*/
     lv_disp_drv_init(&disp_drv);                    /*Basic initialization*/
@@ -76,6 +75,9 @@ void lv_port_disp_init(void)
     /*Set the resolution of the display*/
     disp_drv.hor_res = MY_DISP_HOR_RES;
     disp_drv.ver_res = MY_DISP_VER_RES;
+
+    /*Full-frame rendering in SDRAM buffers, then scan out directly. */
+    disp_drv.full_refresh = 1;
 
     /*Used to copy the buffer's content to the display*/
     disp_drv.flush_cb = disp_flush;
@@ -98,9 +100,9 @@ static void disp_init(void)
     HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
     /* LVGL uses panel-native portrait coordinates; disable extra rotate in LCD_Color_Fill. */
     LCD_Display_Dir(1U);
-    LCD_EnableDoubleBuffer(1U);
+    LCD_EnableDoubleBuffer(0U);
     LCD_Clear(RED);
-    LCD_PresentFrame();
+    LCD_ScanoutFrame((uint16_t *)ltdc_lcd_framebuf);
 }
 
 volatile bool disp_flush_enabled = true;
@@ -117,30 +119,16 @@ void disp_disable_update(void)
 }
 
 static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p){
-    int32_t x1 = area->x1;
-    int32_t y1 = area->y1;
-    int32_t x2 = area->x2;
-    int32_t y2 = area->y2;
+    (void)area;
+    (void)color_p;
 
     if (disp_flush_enabled == false) {
         lv_disp_flush_ready(disp_drv);
         return;
     }
 
-    if (x2 < 0 || y2 < 0 || x1 >= MY_DISP_HOR_RES || y1 >= MY_DISP_VER_RES) {
-        lv_disp_flush_ready(disp_drv);
-        return;
-    }
-
-    if (x1 < 0) x1 = 0;
-    if (y1 < 0) y1 = 0;
-    if (x2 >= MY_DISP_HOR_RES) x2 = MY_DISP_HOR_RES - 1;
-    if (y2 >= MY_DISP_VER_RES) y2 = MY_DISP_VER_RES - 1;
-
-    /* Draw into the back buffer, then present once per frame on the last flushed area. */
-    LCD_Color_Fill((uint16_t)x1, (uint16_t)y1, (uint16_t)x2, (uint16_t)y2, (uint16_t*)color_p);
     if (lv_disp_flush_is_last(disp_drv)) {
-        LCD_PresentFrame();
+        LCD_ScanoutFrame((uint16_t *)disp_drv->draw_buf->buf_act);
     }
 
     lv_disp_flush_ready(disp_drv);

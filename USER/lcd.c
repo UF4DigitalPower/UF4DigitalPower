@@ -353,6 +353,17 @@ void LCD_PresentFrame(void)
 	LCD_DMA2D_CopyFrame(lcd_draw_framebuf, lcd_front_framebuf);
 }
 
+void LCD_ScanoutFrame(uint16_t *framebuf)
+{
+	if (framebuf == NULL) {
+		return;
+	}
+
+	/* Zero-copy present path for LVGL full-frame buffers. */
+	LCD_CleanFrameBuffer(framebuf);
+	LCD_SwapLayerAddress(framebuf);
+}
+
 void LCD_Clear(uint32_t color) {
 	LCD_DMA2D_FillRectTo(LCD_DrawBuffer(), 0, 0, LCD_PhysicalWidth(), LCD_PhysicalHeight(), color);
 }
