@@ -1,6 +1,5 @@
 #include "lvgl_port.h"
 
-#include "demos/lv_demos.h"
 #include "lcd.h"
 #include "lvgl.h"
 #include "ltdc.h"
@@ -9,13 +8,10 @@
 #include <string.h>
 
 /*
- * Stable baseline:
- *   LTDC physical framebuffer is 480 x 640 RGB565.
- *   LVGL renders directly in the same physical coordinate system.
- *   No software rotation, no DMA2D, no double framebuffer, no LTDC reload.
- *
- * This deliberately avoids the previous rotated per-pixel flush. Rotated writes
- * access SDRAM with a large stride and easily starve LTDC on a 16-bit SDRAM bus.
+ * Display smoke-test version.
+ * Purpose: stop the heavy LVGL benchmark and prove whether tearing is caused
+ * by SDRAM/LTDC bus pressure. This path uses LVGL only to draw a very small
+ * moving object on the physical 480x640 framebuffer.
  */
 #define LV_PORT_HOR_RES        LTDC_WIDTH
 #define LV_PORT_VER_RES        LTDC_HEIGHT
@@ -27,6 +23,11 @@ static lv_disp_drv_t s_disp_drv;
 static uint8_t s_is_initialized = 0U;
 static lv_color_t s_draw_buf1[LV_PORT_BUFFER_PIXELS];
 static lv_color_t s_draw_buf2[LV_PORT_BUFFER_PIXELS];
+
+static lv_obj_t *s_box;
+static int16_t s_box_x = 0;
+static int8_t s_box_dx = 2;
+static uint32_t s_last_anim_tick = 0;
 
 static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
 {
@@ -69,6 +70,8 @@ static void lvgl_flush_cb(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_col
 
 void LVGL_Port_Init(void)
 {
+    lv_obj_t *label;
+
     if (s_is_initialized != 0U) {
         return;
     }
@@ -90,17 +93,53 @@ void LVGL_Port_Init(void)
 
     lv_disp_drv_register(&s_disp_drv);
 
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
+    lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
+
+    label = lv_label_create(lv_scr_act());
+    lv_label_set_text(label, "LTDC SDRAM smoke test");
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 8);
+
+    s_box = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(s_box, 80, 80);
+    lv_obj_set_style_bg_color(s_box, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_border_width(s_box, 0, 0);
+    lv_obj_set_pos(s_box, 0, (LV_PORT_VER_RES - 80U) / 2U);
+
     s_is_initialized = 1U;
 }
 
 void LVGL_Port_RunBenchmark(void)
 {
     LVGL_Port_Init();
-    lv_demo_benchmark_set_max_speed(false);
-    lv_demo_benchmark();
 }
 
 uint32_t LVGL_Port_Task(void)
 {
-    return lv_timer_handler();
+    uint32_t now = HAL_GetTick();
+    uint32_t wait;
+
+    if ((now - s_last_anim_tick) >= 33U) {
+        s_last_anim_tick = now;
+
+        s_box_x = (int16_t)(s_box_x + s_box_dx);
+        if (s_box_x < 0) {
+            s_box_x = 0;
+            s_box_dx = 2;
+        } else if (s_box_x > (int16_t)(LV_PORT_HOR_RES - 80U)) {
+            s_box_x = (int16_t)(LV_PORT_HOR_RES - 80U);
+            s_box_dx = -2;
+        }
+
+        if (s_box != NULL) {
+            lv_obj_set_pos(s_box, s_box_x, (int16_t)((LV_PORT_VER_RES - 80U) / 2U));
+        }
+    }
+
+    wait = lv_timer_handler();
+    if (wait > 10U) {
+        wait = 10U;
+    }
+    return wait;
 }
