@@ -4,7 +4,7 @@
 #include "lcd.h"
 #include "lvgl.h"
 #include "ltdc.h"
-
+#include "lv_demo_benchmark.h"
 #include <stdint.h>
 
 /*

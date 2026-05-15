@@ -2432,7 +2432,7 @@
     #ifdef CONFIG_LV_USE_DEMO_BENCHMARK
         #define LV_USE_DEMO_BENCHMARK CONFIG_LV_USE_DEMO_BENCHMARK
     #else
-        #define LV_USE_DEMO_BENCHMARK 0
+        #define LV_USE_DEMO_BENCHMARK 1
     #endif
 #endif
 #if LV_USE_DEMO_BENCHMARK

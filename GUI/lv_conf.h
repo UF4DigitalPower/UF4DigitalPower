@@ -165,7 +165,7 @@
 #define LV_USE_GPU_NXP_VG_LITE 0
 #define LV_USE_GPU_SDL 0
 
-#include "lv_conf_template.h"
+#include "lv_conf.h"
 
 #endif /*LV_CONF_H*/
 
