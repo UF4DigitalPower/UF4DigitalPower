@@ -24,7 +24,13 @@
 /* USER CODE BEGIN 0 */
 
 #define SDRAM_TIMEOUT                   (0x1000U)
-#define SDRAM_REFRESH_COUNT             (480U)
+/*
+ * 32MB SDRAM, 13 row bits => 8192 refresh rows.
+ * Current FMC/SDRAM clock is normally HCLK/2 = about 120MHz on this project.
+ * Refresh count = 64ms * 120MHz / 8192 - 20 = about 917.
+ * The old value 480 over-refreshed SDRAM heavily, stealing SDRAM bandwidth from LTDC.
+ */
+#define SDRAM_REFRESH_COUNT             (918U)
 
 #define SDRAM_MODEREG_BURST_LENGTH_1    ((uint16_t)0x0000)
 #define SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL ((uint16_t)0x0000)
@@ -119,7 +125,7 @@ void MX_FMC_Init(void)
   hsdram1.Init.WriteProtection = FMC_SDRAM_WRITE_PROTECTION_DISABLE;
   hsdram1.Init.SDClockPeriod = FMC_SDRAM_CLOCK_PERIOD_2;
   hsdram1.Init.ReadBurst = FMC_SDRAM_RBURST_ENABLE;
-  hsdram1.Init.ReadPipeDelay = FMC_SDRAM_RPIPE_DELAY_1;
+  hsdram1.Init.ReadPipeDelay = FMC_SDRAM_RPIPE_DELAY_2;
   /* SdramTiming */
   SdramTiming.LoadToActiveDelay = 2;
   SdramTiming.ExitSelfRefreshDelay = 9;
