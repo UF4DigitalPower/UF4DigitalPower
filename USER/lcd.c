@@ -235,6 +235,18 @@ static void LCD_WaitForVBlank(void)
 	} while ((y >= hltdc.Init.AccumulatedVBP) && (y < hltdc.Init.AccumulatedActiveH));
 }
 
+static void LCD_SwapLayerAddress(uint16_t *framebuf)
+{
+	if (framebuf == NULL) {
+		return;
+	}
+
+	LCD_WaitForVBlank();
+	LTDC_Layer1->CFBAR = (uint32_t)framebuf;
+	LTDC->SRCR = LTDC_SRCR_VBR;
+	__DSB();
+}
+
 static void LCD_LogicalRectToRaw(uint16_t sx, uint16_t sy, uint16_t width, uint16_t height,
 								 uint16_t *rx, uint16_t *ry, uint16_t *rw, uint16_t *rh)
 {
@@ -331,8 +343,7 @@ void LCD_PresentFrame(void)
 	}
 
 	LCD_CleanFrameBuffer(lcd_draw_framebuf);
-	LCD_WaitForVBlank();
-	HAL_LTDC_SetAddress(&hltdc, (uint32_t)lcd_draw_framebuf, 0);
+	LCD_SwapLayerAddress(lcd_draw_framebuf);
 
 	lcd_front_framebuf = lcd_draw_framebuf;
 	lcd_draw_framebuf = (lcd_front_framebuf == (uint16_t *)SDRAM_LCD_BUF1) ?
