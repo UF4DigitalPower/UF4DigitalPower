@@ -5,7 +5,7 @@ name: Build and Release Upper
 
 on:
   push:
-    branches: [Upper_release]
+    branches: [None]
 
 jobs:
   build:
