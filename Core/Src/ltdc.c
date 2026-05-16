@@ -36,6 +36,7 @@ void MX_LTDC_Init(void)
   /* USER CODE END LTDC_Init 0 */
 
   LTDC_LayerCfgTypeDef pLayerCfg = {0};
+  LTDC_LayerCfgTypeDef pLayerCfg1 = {0};
 
   /* USER CODE BEGIN LTDC_Init 1 */
 
@@ -49,10 +50,10 @@ void MX_LTDC_Init(void)
   hltdc.Init.VerticalSync = 6;
   hltdc.Init.AccumulatedHBP = 63;
   hltdc.Init.AccumulatedVBP = 33;
-  hltdc.Init.AccumulatedActiveW = 543;
-  hltdc.Init.AccumulatedActiveH = 673;
-  hltdc.Init.TotalWidth = 553;
-  hltdc.Init.TotalHeigh = 685;
+  hltdc.Init.AccumulatedActiveW = 703;
+  hltdc.Init.AccumulatedActiveH = 513;
+  hltdc.Init.TotalWidth = 713;
+  hltdc.Init.TotalHeigh = 525;
   hltdc.Init.Backcolor.Blue = 0;
   hltdc.Init.Backcolor.Green = 0;
   hltdc.Init.Backcolor.Red = 0;
@@ -61,21 +62,40 @@ void MX_LTDC_Init(void)
     Error_Handler();
   }
   pLayerCfg.WindowX0 = 0;
-  pLayerCfg.WindowX1 = 480;
+  pLayerCfg.WindowX1 = 640;
   pLayerCfg.WindowY0 = 0;
-  pLayerCfg.WindowY1 = 640;
+  pLayerCfg.WindowY1 = 480;
   pLayerCfg.PixelFormat = LTDC_PIXEL_FORMAT_RGB565;
   pLayerCfg.Alpha = 255;
   pLayerCfg.Alpha0 = 0;
   pLayerCfg.BlendingFactor1 = LTDC_BLENDING_FACTOR1_CA;
   pLayerCfg.BlendingFactor2 = LTDC_BLENDING_FACTOR2_CA;
   pLayerCfg.FBStartAdress = 0xC0000000;
-  pLayerCfg.ImageWidth = 480;
-  pLayerCfg.ImageHeight = 640;
+  pLayerCfg.ImageWidth = 640;
+  pLayerCfg.ImageHeight = 480;
   pLayerCfg.Backcolor.Blue = 0;
   pLayerCfg.Backcolor.Green = 0;
   pLayerCfg.Backcolor.Red = 0;
   if (HAL_LTDC_ConfigLayer(&hltdc, &pLayerCfg, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pLayerCfg1.WindowX0 = 0;
+  pLayerCfg1.WindowX1 = 640;
+  pLayerCfg1.WindowY0 = 0;
+  pLayerCfg1.WindowY1 = 480;
+  pLayerCfg1.PixelFormat = LTDC_PIXEL_FORMAT_RGB565;
+  pLayerCfg1.Alpha = 0;
+  pLayerCfg1.Alpha0 = 0;
+  pLayerCfg1.BlendingFactor1 = LTDC_BLENDING_FACTOR1_CA;
+  pLayerCfg1.BlendingFactor2 = LTDC_BLENDING_FACTOR2_CA;
+  pLayerCfg1.FBStartAdress = 0xC0000000 + (2 * 1024 * 1024);
+  pLayerCfg1.ImageWidth = 640;
+  pLayerCfg1.ImageHeight = 480;
+  pLayerCfg1.Backcolor.Blue = 0;
+  pLayerCfg1.Backcolor.Green = 0;
+  pLayerCfg1.Backcolor.Red = 0;
+  if (HAL_LTDC_ConfigLayer(&hltdc, &pLayerCfg1, 1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -103,7 +123,7 @@ void HAL_LTDC_MspInit(LTDC_HandleTypeDef* ltdcHandle)
     PeriphClkInitStruct.PLL3.PLL3N = 6;
     PeriphClkInitStruct.PLL3.PLL3P = 2;
     PeriphClkInitStruct.PLL3.PLL3Q = 6;
-    PeriphClkInitStruct.PLL3.PLL3R = 4;
+    PeriphClkInitStruct.PLL3.PLL3R = 6;
     PeriphClkInitStruct.PLL3.PLL3RGE = RCC_PLL3VCIRANGE_3;
     PeriphClkInitStruct.PLL3.PLL3VCOSEL = RCC_PLL3VCOMEDIUM;
     PeriphClkInitStruct.PLL3.PLL3FRACN = 0;
@@ -138,7 +158,6 @@ void HAL_LTDC_MspInit(LTDC_HandleTypeDef* ltdcHandle)
     PC7     ------> LTDC_G6
     PC10     ------> LTDC_R2
     PD3     ------> LTDC_G7
-    PD6     ------> LTDC_B2
     PG10     ------> LTDC_G3
     PG11     ------> LTDC_B3
     PG12     ------> LTDC_B4
@@ -187,7 +206,7 @@ void HAL_LTDC_MspInit(LTDC_HandleTypeDef* ltdcHandle)
     GPIO_InitStruct.Alternate = GPIO_AF14_LTDC;
     HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_6;
+    GPIO_InitStruct.Pin = GPIO_PIN_3;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
@@ -238,7 +257,6 @@ void HAL_LTDC_MspDeInit(LTDC_HandleTypeDef* ltdcHandle)
     PC7     ------> LTDC_G6
     PC10     ------> LTDC_R2
     PD3     ------> LTDC_G7
-    PD6     ------> LTDC_B2
     PG10     ------> LTDC_G3
     PG11     ------> LTDC_B3
     PG12     ------> LTDC_B4
@@ -257,7 +275,7 @@ void HAL_LTDC_MspDeInit(LTDC_HandleTypeDef* ltdcHandle)
     HAL_GPIO_DeInit(GPIOG, GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_10|GPIO_PIN_11
                           |GPIO_PIN_12);
 
-    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_3|GPIO_PIN_6);
+    HAL_GPIO_DeInit(GPIOD, GPIO_PIN_3);
 
     /* LTDC interrupt Deinit */
     HAL_NVIC_DisableIRQ(LTDC_IRQn);

@@ -76,9 +76,9 @@ static void disp_init(void)
     LCD_Init();
     st7701Init();
     HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
-    /* LTDC scans the native 480x640 panel; LCD_ScanoutFrame rotates LVGL's 640x480 frame. */
-    LCD_Display_Dir(1U);
-    LCD_EnableDoubleBuffer(0U);
+    /* LTDC scans the native 640x480 frame buffer. */
+    // LCD_Display_Dir(0U);
+    LCD_EnableDoubleBuffer(1U);
     LCD_Clear(RED);
     LCD_ScanoutFrame((uint16_t *)ltdc_lcd_framebuf);
 }

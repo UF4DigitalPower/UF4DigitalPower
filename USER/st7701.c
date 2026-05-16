@@ -234,7 +234,7 @@ HAL_StatusTypeDef st7701InitRegs(void)
     st7701WriteCmd (0x11);
     HAL_Delay(120);
     st7701WriteCmd (0x36);
-    st7701WriteData (0x08);
+    st7701WriteData (0x68);
     st7701WriteCmd (0x35);
     st7701WriteData (0x00);
     HAL_StatusTypeDef ret = st7701WriteCmd (0x29);

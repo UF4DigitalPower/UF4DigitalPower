@@ -20,7 +20,7 @@ uint32_t BACK_COLOR = 0xFFFFFFFF;  //背景色
 
 //管理LCD重要参数
 
-//面板物理扫描为480*640，应用层默认使用640*480横屏逻辑坐标。
+//面板物理扫描和应用层坐标均为640*480横屏。
 _lcd_dev lcddev = { .id = 0X7701, .width = LCD_LOGICAL_WIDTH, .height = LCD_LOGICAL_HEIGHT, .dir = 1, .pixsize = LTDC_PIXSIZE, };
 
 uint16_t *const ltdc_lcd_framebuf = (uint16_t *)LCD_FRAME_BUFFER;
@@ -48,6 +48,11 @@ static inline uint16_t *LCD_DrawBuffer(void)
 static inline uint32_t LCD_RawOffset(uint16_t x, uint16_t y)
 {
 	return (uint32_t)LCD_PhysicalWidth() * y + x;
+}
+
+static inline uint8_t LCD_IsNativeLandscape(void)
+{
+	return (LTDC_WIDTH == LCD_LOGICAL_WIDTH && LTDC_HEIGHT == LCD_LOGICAL_HEIGHT) ? 1U : 0U;
 }
 
 static void LCD_CleanDCacheByAddr(const void *addr, uint32_t size)
@@ -217,6 +222,11 @@ static void LCD_RotateLandscapeFrameToPhysical(uint16_t *dst, const uint16_t *sr
 		return;
 	}
 
+	if (LCD_IsNativeLandscape() != 0U) {
+		LCD_DMA2D_CopyFrame(dst, src);
+		return;
+	}
+
 	for (uint16_t y = 0U; y < LCD_LOGICAL_HEIGHT; y++) {
 		for (uint16_t x = 0U; x < LCD_LOGICAL_WIDTH; x++) {
 			const uint32_t src_idx = (uint32_t)y * LCD_LOGICAL_WIDTH + x;
@@ -246,6 +256,11 @@ void LCD_BlitLandscapeArea(const uint16_t *src, uint16_t x1, uint16_t y1, uint16
 
 	const uint16_t src_w = (uint16_t)(x2 - x1 + 1U);
 	const uint16_t src_h = (uint16_t)(y2 - y1 + 1U);
+
+	if (LCD_IsNativeLandscape() != 0U) {
+		LCD_DMA2D_CopyRectTo(ltdc_lcd_framebuf, x1, y1, src_w, src_h, src);
+		return;
+	}
 
 	for (uint16_t y = 0U; y < src_h; y++) {
 		for (uint16_t x = 0U; x < src_w; x++) {
@@ -302,7 +317,7 @@ static void LCD_SwapLayerAddress(uint16_t *framebuf)
 static void LCD_LogicalRectToRaw(uint16_t sx, uint16_t sy, uint16_t width, uint16_t height,
 								 uint16_t *rx, uint16_t *ry, uint16_t *rw, uint16_t *rh)
 {
-	if (lcddev.dir == 0U) {
+	if (lcddev.dir == 0U || LCD_IsNativeLandscape() != 0U) {
 		*rx = sx;
 		*ry = sy;
 		*rw = width;
@@ -321,7 +336,7 @@ void LTDC_Draw_Point(uint16_t x, uint16_t y, uint32_t color) {
 		return;
 	}
 
-	if (lcddev.dir == 0U) {
+	if (lcddev.dir == 0U || LCD_IsNativeLandscape() != 0U) {
 		LCD_DrawBuffer()[(uint32_t)y * LCD_PhysicalWidth() + x] = (uint16_t)color;
 	} else {
 		const uint16_t fb_x = y;
@@ -337,7 +352,10 @@ return 0;
 
 void LCD_Display_Dir(uint8_t dir) {
 	lcddev.dir = (dir == 0U) ? 0U : 1U;
-	if (lcddev.dir == 0U) {
+	if (LCD_IsNativeLandscape() != 0U) {
+		lcddev.width = LCD_LOGICAL_WIDTH;
+		lcddev.height = LCD_LOGICAL_HEIGHT;
+	} else if (lcddev.dir == 0U) {
 		lcddev.width = LCD_PhysicalWidth();
 		lcddev.height = LCD_PhysicalHeight();
 	} else {
@@ -463,7 +481,7 @@ void LCD_Rect_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint32_t 
 void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color) {
 	uint32_t psx, psy, pex, pey; //以LCD面板为基准的坐标系,不随横竖屏变化而变化
 	//坐标系转换
-	if (lcddev.dir) //横屏
+	if (lcddev.dir || LCD_IsNativeLandscape() != 0U) //横屏
 	{
 		psx = sx;
 		psy = sy;

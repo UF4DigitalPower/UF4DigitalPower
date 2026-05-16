@@ -1,9 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file    dma.h
+  * @file    bdma.h
   * @brief   This file contains all the function prototypes for
-  *          the dma.c file
+  *          the bdma.c file
   ******************************************************************************
   * @attention
   *
@@ -18,8 +18,8 @@
   */
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __DMA_H__
-#define __DMA_H__
+#ifndef __BDMA_H__
+#define __BDMA_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +29,7 @@ extern "C" {
 #include "main.h"
 
 /* DMA memory to memory transfer handles -------------------------------------*/
-extern DMA_HandleTypeDef hdma_memtomem_dma1_stream0;
+extern DMA_HandleTypeDef hdma_memtomem_bdma_channel0;
 
 /* USER CODE BEGIN Includes */
 
@@ -39,7 +39,7 @@ extern DMA_HandleTypeDef hdma_memtomem_dma1_stream0;
 
 /* USER CODE END Private defines */
 
-void MX_DMA_Init(void);
+void MX_BDMA_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 
@@ -49,5 +49,5 @@ void MX_DMA_Init(void);
 }
 #endif
 
-#endif /* __DMA_H__ */
+#endif /* __BDMA_H__ */
 

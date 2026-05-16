@@ -19,7 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
-#include "dma.h"
+#include "bdma.h"
 #include "dma2d.h"
 #include "i2c.h"
 #include "ltdc.h"
@@ -116,7 +116,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
+  MX_BDMA_Init();
   MX_DMA2D_Init();
   MX_FMC_Init();
   MX_I2C3_Init();
@@ -128,8 +128,8 @@ int main(void)
   MX_UART4_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
-  MX_TIM4_Init();
   MX_ADC3_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
   if (HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL) != HAL_OK)
@@ -300,7 +300,7 @@ void MPU_Config(void)
   MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
   MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
   MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
-  MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
 
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
