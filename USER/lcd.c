@@ -5,6 +5,7 @@
 #include "lcd.h"
 #include <stdint.h>
 
+#include "bdma.h"
 #include "dma2d.h"
 #include "stdio.h"
 #include "string.h"
@@ -13,6 +14,7 @@
 
 #define LCD_CACHE_LINE    32U
 #define LCD_DMA2D_TIMEOUT 0x1FFFFFU
+#define LCD_BDMA_TIMEOUT  100U
 
 //LCD的画笔颜色和背景色
 uint32_t POINT_COLOR = 0xFF000000; //画笔颜色
@@ -216,6 +218,58 @@ static void LCD_DMA2D_CopyFrame(uint16_t *dst, const uint16_t *src)
 	LCD_InvalidateDCacheByAddr(dst, LTDC_FRAME_BYTES);
 }
 
+static uint8_t LCD_BDMA_CopyLine(uint16_t *dst, const uint16_t *src, uint32_t pixels)
+{
+	if (dst == NULL || src == NULL || pixels == 0U) {
+		return 1U;
+	}
+
+	LCD_CleanDCacheByAddr(src, pixels * LTDC_PIXSIZE);
+	LCD_CleanDCacheByAddr(dst, pixels * LTDC_PIXSIZE);
+
+	if (HAL_DMA_Start(&hdma_memtomem_bdma_channel0, (uint32_t)src, (uint32_t)dst, pixels) != HAL_OK) {
+		return 0U;
+	}
+	if (HAL_DMA_PollForTransfer(&hdma_memtomem_bdma_channel0, HAL_DMA_FULL_TRANSFER, LCD_BDMA_TIMEOUT) != HAL_OK) {
+		(void)HAL_DMA_Abort(&hdma_memtomem_bdma_channel0);
+		return 0U;
+	}
+
+	LCD_InvalidateDCacheByAddr(dst, pixels * LTDC_PIXSIZE);
+	return 1U;
+}
+
+static void LCD_CPU_CopyRectTo(uint16_t *dst, uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *src)
+{
+	for (uint16_t row = 0U; row < height; row++) {
+		uint16_t *dst_line = &dst[LCD_RawOffset(x, (uint16_t)(y + row))];
+		const uint16_t *src_line = &src[(uint32_t)row * width];
+		memcpy(dst_line, src_line, (uint32_t)width * LTDC_PIXSIZE);
+		LCD_CleanDCacheByAddr(dst_line, (uint32_t)width * LTDC_PIXSIZE);
+	}
+}
+
+static void LCD_BDMA_CopyRectTo(uint16_t *dst, uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *src)
+{
+	if (dst == NULL || src == NULL || width == 0U || height == 0U) {
+		return;
+	}
+
+	LCD_ClipRawRect(&x, &y, &width, &height);
+	if (width == 0U || height == 0U) {
+		return;
+	}
+
+	for (uint16_t row = 0U; row < height; row++) {
+		uint16_t *dst_line = &dst[LCD_RawOffset(x, (uint16_t)(y + row))];
+		const uint16_t *src_line = &src[(uint32_t)row * width];
+		if (LCD_BDMA_CopyLine(dst_line, src_line, width) == 0U) {
+			LCD_CPU_CopyRectTo(dst, x, (uint16_t)(y + row), width, (uint16_t)(height - row), src_line);
+			return;
+		}
+	}
+}
+
 static void LCD_RotateLandscapeFrameToPhysical(uint16_t *dst, const uint16_t *src)
 {
 	if (dst == NULL || src == NULL) {
@@ -258,7 +312,7 @@ void LCD_BlitLandscapeArea(const uint16_t *src, uint16_t x1, uint16_t y1, uint16
 	const uint16_t src_h = (uint16_t)(y2 - y1 + 1U);
 
 	if (LCD_IsNativeLandscape() != 0U) {
-		LCD_DMA2D_CopyRectTo(ltdc_lcd_framebuf, x1, y1, src_w, src_h, src);
+		LCD_BDMA_CopyRectTo(ltdc_lcd_framebuf, x1, y1, src_w, src_h, src);
 		return;
 	}
 

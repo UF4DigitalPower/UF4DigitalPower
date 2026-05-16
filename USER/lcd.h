@@ -42,7 +42,6 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 
 #define LTDC_WIDTH 640U
 #define LTDC_HEIGHT 480U
-
 #define LTDC_PIXSIZE 2U
 #define LTDC_FRAME_BYTES (LTDC_WIDTH * LTDC_HEIGHT * LTDC_PIXSIZE)
 
