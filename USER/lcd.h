@@ -16,7 +16,7 @@ typedef struct {
 	uint16_t width;	 //LCD 宽度
 	uint16_t height;	 //LCD 高度
 	uint16_t id;		 //LCD ID
-	uint8_t dir;		 //横屏还是竖屏控制：0，竖屏；1，横屏。
+	uint8_t dir;		 //显示方向：0，物理竖屏；1，逻辑横屏。
 	uint32_t pixsize;	//每个像素所占字节数
 } _lcd_dev;
 
@@ -40,6 +40,13 @@ extern _lcd_dev lcddev; //管理LCD重要参数
 extern uint32_t POINT_COLOR; //默认红色
 extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 
+#define LTDC_WIDTH 480U
+#define LTDC_HEIGHT 640U
+#define LTDC_PIXSIZE 2U
+#define LTDC_FRAME_BYTES (LTDC_WIDTH * LTDC_HEIGHT * LTDC_PIXSIZE)
+#define LCD_LOGICAL_WIDTH 640U
+#define LCD_LOGICAL_HEIGHT 480U
+
 // SDRAM / LTDC / LVGL 内存规划
 #define EXT_SDRAM_ADDR        ((uint32_t)0xC0000000)
 #define EXT_SDRAM_SIZE        (32U * 1024U * 1024U)
@@ -51,10 +58,10 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 #define SDRAM_APP_BUF         (EXT_SDRAM_ADDR + SDRAM_LCD_SIZE * SDRAM_LCD_LAYER)
 #define SDRAM_APP_SIZE        (EXT_SDRAM_SIZE - SDRAM_LCD_SIZE * SDRAM_LCD_LAYER)
 
-/* LVGL 双全屏 draw buffer：640x480xRGB565x2，放在 SDRAM 应用区起始位置 */
+/* LVGL 双全屏 draw buffer，放在 SDRAM 应用区起始位置 */
 #define SDRAM_LVGL_DRAW_BUF1  SDRAM_APP_BUF
-#define SDRAM_LVGL_DRAW_BUF2  (SDRAM_LVGL_DRAW_BUF1 + (640U * 480U * 2U))
-#define SDRAM_LVGL_HEAP_ADDR  (SDRAM_APP_BUF + (2U * 640U * 480U * 2U))
+#define SDRAM_LVGL_DRAW_BUF2  (SDRAM_LVGL_DRAW_BUF1 + LTDC_FRAME_BYTES)
+#define SDRAM_LVGL_HEAP_ADDR  (SDRAM_APP_BUF + 2U * LTDC_FRAME_BYTES)
 #define SDRAM_LVGL_HEAP_SIZE  (EXT_SDRAM_ADDR + EXT_SDRAM_SIZE - SDRAM_LVGL_HEAP_ADDR)
 
 //LCD MPU保护参数
@@ -91,12 +98,6 @@ extern uint32_t BACK_COLOR;	//背景颜色.默认为白色
 #define LGRAYBLUE 0XA651 //浅灰蓝色(中间层颜色)
 #define LBBLUE 0X2B12	 //浅棕蓝色(选择条目的反色)
 
-#define LCD_LOGICAL_WIDTH 480
-#define LCD_LOGICAL_HEIGHT 640
-#define LTDC_WIDTH 480
-#define LTDC_HEIGHT 640
-#define LTDC_PIXSIZE 2
-#define LTDC_FRAME_BYTES (LTDC_WIDTH * LTDC_HEIGHT * LTDC_PIXSIZE)
 #define LCD_FRAME_BUFFER SDRAM_LCD_BUF1
 extern uint16_t *const ltdc_lcd_framebuf;
 
@@ -110,6 +111,7 @@ void LCD_Display_Dir(uint8_t dir);                                      //设置
 void LCD_EnableDoubleBuffer(uint8_t enable);                             //启用/关闭裸屏双缓冲
 void LCD_PresentFrame(void);                                             //提交后台帧到LTDC
 void LCD_ScanoutFrame(uint16_t *framebuf);                              //直接切换LTDC扫描地址到指定帧缓冲
+void LCD_BlitLandscapeArea(const uint16_t *src, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
 void LCD_TestLoop(void);                                                //裸屏循环测试
 void LCD_DrawPoint(uint16_t x, uint16_t y);                              //画点
 void LCD_Draw_Circle(uint16_t x0, uint16_t y0, uint8_t r);               //画圆

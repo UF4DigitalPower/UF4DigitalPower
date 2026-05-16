@@ -81,7 +81,7 @@
  *====================*/
 
 /*默认的显示刷新周期。LVG会在这段时间内重绘变化区域*/
-#define LV_DISP_DEF_REFR_PERIOD 5      /*[ms]*/
+#define LV_DISP_DEF_REFR_PERIOD 10      /*[ms]*/
 
 /*输入设备读取周期，单位为毫秒*/
 #define LV_INDEV_DEF_READ_PERIOD 10     /*[ms]*/

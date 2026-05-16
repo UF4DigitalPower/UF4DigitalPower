@@ -11,8 +11,6 @@
 
 //LTDC中需要实现清屏，画点，区域填充单色，区域填充指定色块函数。
 
-#define LCD_PANEL_WIDTH   480U
-#define LCD_PANEL_HEIGHT  640U
 #define LCD_CACHE_LINE    32U
 #define LCD_DMA2D_TIMEOUT 0x1FFFFFU
 
@@ -22,8 +20,8 @@ uint32_t BACK_COLOR = 0xFFFFFFFF;  //背景色
 
 //管理LCD重要参数
 
-//初始化为RGB屏480*640，默认竖屏，每个像素2字节
-_lcd_dev lcddev = { .id = 0X7701, .width = LCD_LOGICAL_WIDTH, .height = LCD_LOGICAL_HEIGHT, .dir = 0, .pixsize = LTDC_PIXSIZE, };
+//面板物理扫描为480*640，应用层默认使用640*480横屏逻辑坐标。
+_lcd_dev lcddev = { .id = 0X7701, .width = LCD_LOGICAL_WIDTH, .height = LCD_LOGICAL_HEIGHT, .dir = 1, .pixsize = LTDC_PIXSIZE, };
 
 uint16_t *const ltdc_lcd_framebuf = (uint16_t *)LCD_FRAME_BUFFER;
 
@@ -34,12 +32,12 @@ static uint8_t lcd_double_buffer_enabled = 0U;
 
 static inline uint16_t LCD_PhysicalWidth(void)
 {
-	return LCD_PANEL_WIDTH;
+	return LTDC_WIDTH;
 }
 
 static inline uint16_t LCD_PhysicalHeight(void)
 {
-	return LCD_PANEL_HEIGHT;
+	return LTDC_HEIGHT;
 }
 
 static inline uint16_t *LCD_DrawBuffer(void)
@@ -213,6 +211,60 @@ static void LCD_DMA2D_CopyFrame(uint16_t *dst, const uint16_t *src)
 	LCD_InvalidateDCacheByAddr(dst, LTDC_FRAME_BYTES);
 }
 
+static void LCD_RotateLandscapeFrameToPhysical(uint16_t *dst, const uint16_t *src)
+{
+	if (dst == NULL || src == NULL) {
+		return;
+	}
+
+	for (uint16_t y = 0U; y < LCD_LOGICAL_HEIGHT; y++) {
+		for (uint16_t x = 0U; x < LCD_LOGICAL_WIDTH; x++) {
+			const uint32_t src_idx = (uint32_t)y * LCD_LOGICAL_WIDTH + x;
+			const uint32_t dst_idx = (uint32_t)(LTDC_HEIGHT - 1U - x) * LTDC_WIDTH + y;
+			dst[dst_idx] = src[src_idx];
+		}
+	}
+
+	LCD_CleanFrameBuffer(dst);
+}
+
+void LCD_BlitLandscapeArea(const uint16_t *src, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
+{
+	if (src == NULL || x1 > x2 || y1 > y2) {
+		return;
+	}
+
+	if (x1 >= LCD_LOGICAL_WIDTH || y1 >= LCD_LOGICAL_HEIGHT) {
+		return;
+	}
+	if (x2 >= LCD_LOGICAL_WIDTH) {
+		x2 = LCD_LOGICAL_WIDTH - 1U;
+	}
+	if (y2 >= LCD_LOGICAL_HEIGHT) {
+		y2 = LCD_LOGICAL_HEIGHT - 1U;
+	}
+
+	const uint16_t src_w = (uint16_t)(x2 - x1 + 1U);
+	const uint16_t src_h = (uint16_t)(y2 - y1 + 1U);
+
+	for (uint16_t y = 0U; y < src_h; y++) {
+		for (uint16_t x = 0U; x < src_w; x++) {
+			const uint32_t dst_x = (uint32_t)y1 + y;
+			const uint32_t dst_y = LTDC_HEIGHT - 1U - ((uint32_t)x1 + x);
+			ltdc_lcd_framebuf[dst_y * LTDC_WIDTH + dst_x] = src[(uint32_t)y * src_w + x];
+		}
+	}
+
+	const uint16_t dirty_x = y1;
+	const uint16_t dirty_y = (uint16_t)(LTDC_HEIGHT - 1U - x2);
+	const uint16_t dirty_w = src_h;
+	const uint16_t dirty_h = src_w;
+	const uint32_t dirty_addr = (uint32_t)&ltdc_lcd_framebuf[(uint32_t)dirty_y * LTDC_WIDTH + dirty_x];
+	const uint32_t dirty_span = ((uint32_t)(dirty_h - 1U) * LTDC_WIDTH + dirty_w) * LTDC_PIXSIZE;
+
+	LCD_CleanDCacheByAddr((void *)dirty_addr, dirty_span);
+}
+
 static void LCD_WaitForVBlank(void)
 {
 	uint32_t timeout = 0x3FFFFU;
@@ -284,7 +336,7 @@ return 0;
 }
 
 void LCD_Display_Dir(uint8_t dir) {
-	lcddev.dir = (dir == 0U) ? 0U : 1U;        //竖屏/横屏
+	lcddev.dir = (dir == 0U) ? 0U : 1U;
 	if (lcddev.dir == 0U) {
 		lcddev.width = LCD_PhysicalWidth();
 		lcddev.height = LCD_PhysicalHeight();
@@ -303,9 +355,9 @@ void LCD_DrawPoint(uint16_t x, uint16_t y) {
 
 void LCD_Init(void) {
 	lcddev.id = 0X7701;
-	lcddev.dir = 0;
-	lcddev.width = LCD_PhysicalWidth();
-	lcddev.height = LCD_PhysicalHeight();
+	lcddev.dir = 1;
+	lcddev.width = LCD_LOGICAL_WIDTH;
+	lcddev.height = LCD_LOGICAL_HEIGHT;
 	lcddev.pixsize = LTDC_PIXSIZE;
 	lcd_front_framebuf = (uint16_t *)SDRAM_LCD_BUF1;
 	lcd_back_framebuf = (uint16_t *)SDRAM_LCD_BUF2;
@@ -359,9 +411,14 @@ void LCD_ScanoutFrame(uint16_t *framebuf)
 		return;
 	}
 
-	/* Zero-copy present path for LVGL full-frame buffers. */
-	LCD_CleanFrameBuffer(framebuf);
-	LCD_SwapLayerAddress(framebuf);
+	if (framebuf == ltdc_lcd_framebuf || framebuf == lcd_front_framebuf || framebuf == lcd_back_framebuf) {
+		LCD_CleanFrameBuffer(framebuf);
+		LCD_SwapLayerAddress(framebuf);
+		return;
+	}
+
+	LCD_RotateLandscapeFrameToPhysical(ltdc_lcd_framebuf, framebuf);
+	LCD_SwapLayerAddress(ltdc_lcd_framebuf);
 }
 
 void LCD_Clear(uint32_t color) {
@@ -608,7 +665,7 @@ void LCD_TestLoop(void)
 	int16_t ball_vy = 6;
 	uint32_t frame = 0U;
 
-	LCD_Display_Dir(0);
+	LCD_Display_Dir(1);
 	LCD_EnableDoubleBuffer(1U);
 	LCD_Clear(bg);
 	POINT_COLOR = WHITE;
