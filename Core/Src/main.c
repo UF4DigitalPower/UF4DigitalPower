@@ -33,13 +33,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "lcd.h"
-#include "st7701.h"
+#include "bsp_lcd.h"
+#include "bsp_st7701.h"
+#include "ui.h"
 
 /* USER CODE END Includes */
-#include "lvgl.h"
-#include "lv_demo_benchmark.h"
-#include "lv_port_disp.h"
+
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
@@ -66,8 +65,6 @@
 void SystemClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
-static void LCD_ShowDemo(void);
-static void LCD_UpdateRunMarker(void);
 
 /* USER CODE END PFP */
 
@@ -147,15 +144,17 @@ int main(void)
     Error_Handler();
   }
 
-  // LCD_Init();
-  // st7701Init();
-  // HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
-  // LCD_Clear(RED);
+  LCD_Init();
+  ST7701Init();
+  LCD_SetDisplayDir(1);
+  HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
+  LCD_Clear(BLACK);
+
+  UI_SetDemoEnabled(true);
+  UI_Init();
 
   // LCD_TestLoop();
-  lv_init();
-  lv_port_disp_init();
-  lv_demo_benchmark();
+
 
 
   /* USER CODE END 2 */
@@ -164,8 +163,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    lv_task_handler();
     HAL_Delay(5);
+    UI_Tick();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -233,48 +232,9 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-static void LCD_ShowDemo(void)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  uint16_t i;
-
-  LCD_Clear(BLACK);
-
-  /* LANDSCAPE V3: top=red, right=green, bottom=blue, left=yellow. */
-  LCD_Rect_Fill(0, 0, LCD_LOGICAL_WIDTH, 42, RED);
-  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 42, 0, 42, LCD_LOGICAL_HEIGHT, GREEN);
-  LCD_Rect_Fill(0, LCD_LOGICAL_HEIGHT - 42, LCD_LOGICAL_WIDTH, 42, BLUE);
-  LCD_Rect_Fill(0, 0, 42, LCD_LOGICAL_HEIGHT, YELLOW);
-
-  LCD_Rect_Fill(64, 64, 96, 96, RED);
-  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 160, 64, 96, 96, GREEN);
-  LCD_Rect_Fill(64, LCD_LOGICAL_HEIGHT - 160, 96, 96, BLUE);
-  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 160, LCD_LOGICAL_HEIGHT - 160, 96, 96, WHITE);
-
-  LCD_Rect_Fill(150, 215, 300, 50, WHITE);
-  for (i = 0; i < 90; i += 6)
-  {
-    LCD_Rect_Fill(450 + (i / 2U), 170 + i, 6, 140 - i * 2U, WHITE);
-  }
-
-  LCD_Rect_Fill(210, 130, 40, 70, MAGENTA);
-  LCD_Rect_Fill(210, 130, 140, 34, MAGENTA);
-  LCD_Rect_Fill(310, 130, 40, 150, MAGENTA);
-  LCD_Rect_Fill(210, 250, 140, 34, MAGENTA);
-
-  POINT_COLOR = CYAN;
-  LCD_DrawLine(0, 0, LCD_LOGICAL_WIDTH - 1, LCD_LOGICAL_HEIGHT - 1);
-  LCD_DrawLine(LCD_LOGICAL_WIDTH - 1, 0, 0, LCD_LOGICAL_HEIGHT - 1);
-  POINT_COLOR = WHITE;
-  LCD_DrawRectangle(38, 38, LCD_LOGICAL_WIDTH - 39, LCD_LOGICAL_HEIGHT - 39);
-}
-
-static void LCD_UpdateRunMarker(void)
-{
-  static uint8_t state = 0;
-  static const uint16_t colors[] = {RED, GREEN, BLUE, WHITE};
-
-  LCD_Rect_Fill(LCD_LOGICAL_WIDTH - 112, LCD_LOGICAL_HEIGHT - 112, 64, 64, colors[state]);
-  state = (uint8_t)((state + 1U) & 0x03U);
+  UI_OnKeyInterrupt(GPIO_Pin);
 }
 
 /* USER CODE END 4 */

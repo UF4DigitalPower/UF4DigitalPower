@@ -3,6 +3,39 @@
 
 五个按钮连接到E2-E6,外部中断
 
+## 简单 UI 库说明
+
+工程内新增了一套轻量级 UI，位于 `UI/` 目录，已经在 `Core/Src/main.c` 中接入。
+
+### 页面
+
+- `HOME`：电压、电流、负载、温度总览页
+- `SET`：输出参数设置页，可调整 `VSET` / `ISET`
+- `MENU`：简单菜单页，演示按钮点击与页面切换
+
+### 输入映射
+
+- `KEY_UP / KEY_DN`：切换焦点
+- `KEY_L / KEY_R`：切页或调节参数
+- `KEY_M`：确认/点击
+- `TIM4` 编码器：调节电压设定值 `VSET`
+- `TIM2` 编码器：调节电流设定值 `ISET`
+- `KEY_V_PUSH`：应用设置
+- `KEY_I_PUSH`：切换输出开关
+
+### 主要接口
+
+- `UI_Init()`：初始化 UI
+- `UI_Tick()`：主循环轮询输入并按需刷新页面
+- `UI_OnKeyInterrupt()`：在 EXTI 回调中转发按键事件
+- `UI_SetPowerSnapshot()`：外部业务更新真实电源数据
+- `UI_SetActionCallback()`：注册按钮动作回调
+
+### 当前示例
+
+目前 `main.c` 默认开启了 `UI_SetDemoEnabled(true)`，会自动生成一组演示电压、电流、温度数据。
+后续接入真实电源数据时，只需要关闭 demo 并周期性调用 `UI_SetPowerSnapshot()` 即可。
+
 LTDC屏幕是640×480的ST7701的RGB666的屏幕，使用RGB565的LTDC驱动，使用DMA2D，没有用到I2C触摸，使用SPI6初始化
 
 外部SDRAM使用W9825G6KH
