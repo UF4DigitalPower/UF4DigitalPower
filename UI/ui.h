@@ -78,6 +78,7 @@ typedef struct {
 	uint16_t accent_color;
 	bool focused;
 	bool active;
+	uint8_t scale;
 } ui_button_t;
 
 typedef struct {
@@ -114,6 +115,7 @@ typedef struct {
 	int32_t vout_mv;
 	int32_t iout_ma;
 	int32_t temp_dC;
+	uint16_t fan_permille;
 	int32_t vset_mv;
 	int32_t iset_ma;
 	uint16_t fault_code;
@@ -156,3 +158,4 @@ void UI_PageDrawFooterHints(const char *left_hint, const char *center_hint, cons
 #endif
 
 #endif /* STM32H743_UI_H */
+

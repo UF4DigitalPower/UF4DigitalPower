@@ -35,7 +35,10 @@
 /* USER CODE BEGIN Includes */
 #include "bsp_lcd.h"
 #include "bsp_st7701.h"
+#include "power_comm.h"
 #include "ui.h"
+
+#include <string.h>
 
 /* USER CODE END Includes */
 
@@ -58,6 +61,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+static int32_t g_last_sent_vset_mv;
+static int32_t g_last_sent_iset_ma;
+static bool g_last_sent_output_enabled;
 
 /* USER CODE END PV */
 
@@ -65,11 +71,61 @@
 void SystemClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
+static void App_OnUiAction(ui_action_t action, const ui_power_snapshot_t *snapshot, void *user_data);
+static void App_PollPowerComm(void);
+static void App_SyncUiSettings(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void App_OnUiAction(const ui_action_t action, const ui_power_snapshot_t *snapshot, void *user_data)
+{
+  (void) user_data;
+
+  if (snapshot == NULL) {
+    return;
+  }
+
+  if (action == UI_ACTION_OUTPUT_TOGGLED || action == UI_ACTION_APPLY_SETTINGS) {
+    PowerComm_WriteSettings(snapshot->vset_mv, snapshot->iset_ma, snapshot->output_enabled);
+    g_last_sent_vset_mv = snapshot->vset_mv;
+    g_last_sent_iset_ma = snapshot->iset_ma;
+    g_last_sent_output_enabled = snapshot->output_enabled;
+  }
+}
+
+static void App_PollPowerComm(void)
+{
+  ui_power_snapshot_t snapshot;
+
+  UI_GetPowerSnapshot(&snapshot);
+  if (PowerComm_Tick(&snapshot)) {
+    ui_power_snapshot_t current;
+    UI_GetPowerSnapshot(&current);
+    if (memcmp(&current, &snapshot, sizeof(snapshot)) != 0) {
+      UI_SetPowerSnapshot(&snapshot);
+      g_last_sent_vset_mv = snapshot.vset_mv;
+      g_last_sent_iset_ma = snapshot.iset_ma;
+      g_last_sent_output_enabled = snapshot.output_enabled;
+    }
+  }
+}
+
+static void App_SyncUiSettings(void)
+{
+  ui_power_snapshot_t snapshot;
+
+  UI_GetPowerSnapshot(&snapshot);
+  if (snapshot.vset_mv != g_last_sent_vset_mv ||
+      snapshot.iset_ma != g_last_sent_iset_ma ||
+      snapshot.output_enabled != g_last_sent_output_enabled) {
+    PowerComm_WriteSettings(snapshot.vset_mv, snapshot.iset_ma, snapshot.output_enabled);
+    g_last_sent_vset_mv = snapshot.vset_mv;
+    g_last_sent_iset_ma = snapshot.iset_ma;
+    g_last_sent_output_enabled = snapshot.output_enabled;
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -150,8 +206,20 @@ int main(void)
   HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
   LCD_Clear(BLACK);
 
-  UI_SetDemoEnabled(true);
+  PowerComm_Init(&huart1);
+
+  UI_SetDemoEnabled(false);
+
+  UI_SetActionCallback(App_OnUiAction, NULL);
+
   UI_Init();
+  {
+    ui_power_snapshot_t snapshot;
+    UI_GetPowerSnapshot(&snapshot);
+    g_last_sent_vset_mv = snapshot.vset_mv;
+    g_last_sent_iset_ma = snapshot.iset_ma;
+    g_last_sent_output_enabled = snapshot.output_enabled;
+  }
 
   // LCD_TestLoop();
 
@@ -165,6 +233,8 @@ int main(void)
   {
     HAL_Delay(5);
     UI_Tick();
+    App_SyncUiSettings();
+    App_PollPowerComm();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -259,7 +329,7 @@ void MPU_Config(void)
   MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
   MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
   MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
-  MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
   MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
 
   HAL_MPU_ConfigRegion(&MPU_InitStruct);

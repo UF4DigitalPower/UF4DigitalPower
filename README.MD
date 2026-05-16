@@ -1,376 +1,132 @@
-# 硬件连接
-板载两个EC11编码器连接到TIM2.TIM4的硬件解码器上，还有PUSH按钮用来确认
+# F4CP / UF4DigitalPower 通信命令表
 
-五个按钮连接到E2-E6,外部中断
+文档是上位机 `F4CP` 与功率固件 `UF4DigitalPower` 之间 TVLCOM 通信命令的统一契约。修改通信命令、数据类型、单位或访问权限时，先改这份表，再同步：
 
-## 简单 UI 库说明
+本项目作为一个脱机的`UF4DigitalPower` 上位机，可以使用串口发送到BLE与上位机联系
+## 帧格式
 
-工程内新增了一套轻量级 UI，位于 `UI/` 目录，已经在 `Core/Src/main.c` 中接入。
-
-### 页面
-
-- `HOME`：电压、电流、负载、温度总览页
-- `SET`：输出参数设置页，可调整 `VSET` / `ISET`
-- `MENU`：简单菜单页，演示按钮点击与页面切换
-
-### 输入映射
-
-- `KEY_UP / KEY_DN`：切换焦点
-- `KEY_L / KEY_R`：切页或调节参数
-- `KEY_M`：确认/点击
-- `TIM4` 编码器：调节电压设定值 `VSET`
-- `TIM2` 编码器：调节电流设定值 `ISET`
-- `KEY_V_PUSH`：应用设置
-- `KEY_I_PUSH`：切换输出开关
-
-### 主要接口
-
-- `UI_Init()`：初始化 UI
-- `UI_Tick()`：主循环轮询输入并按需刷新页面
-- `UI_OnKeyInterrupt()`：在 EXTI 回调中转发按键事件
-- `UI_SetPowerSnapshot()`：外部业务更新真实电源数据
-- `UI_SetActionCallback()`：注册按钮动作回调
-
-### 当前示例
-
-目前 `main.c` 默认开启了 `UI_SetDemoEnabled(true)`，会自动生成一组演示电压、电流、温度数据。
-后续接入真实电源数据时，只需要关闭 demo 并周期性调用 `UI_SetPowerSnapshot()` 即可。
-
-LTDC屏幕是640×480的ST7701的RGB666的屏幕，使用RGB565的LTDC驱动，使用DMA2D，没有用到I2C触摸，使用SPI6初始化
-
-外部SDRAM使用W9825G6KH
-
-外部QFLASH连接到W25Q64
-
-
-
-
-fmc.c文件里面的SDRAM初始化 ，cubemx生成代码里面没有这个，需要加上
-
-```
-uint32_t tmpr = 0;
-FMC_SDRAM_CommandTypeDef Command;
-
-SDRAM_HandleTypeDef hsdram2;
-
-// 第一步，给 SDRAM 提供时钟
-Command.CommandMode = FMC_SDRAM_CMD_CLK_ENABLE;
-Command.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK2;
-Command.AutoRefreshNumber = 1;
-Command.ModeRegisterDefinition = 0;
-
-HAL_SDRAM_SendCommand(&hsdram2, &Command, SDRAM_TIMEOUT);
-
-// 第二步，延迟至少 200 us
-HAL_Delay(1); // 延时 1 ms
-
-// 第三步，对所有 Banks 预充电
-Command.CommandMode = FMC_SDRAM_CMD_PALL;
-Command.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK2;
-Command.AutoRefreshNumber = 1;
-Command.ModeRegisterDefinition = 0;
-
-HAL_SDRAM_SendCommand(&hsdram2, &Command, SDRAM_TIMEOUT);
-
-// 第四步，插入 8 个自动刷新周期
-Command.CommandMode = FMC_SDRAM_CMD_AUTOREFRESH_MODE;
-Command.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK2;
-Command.AutoRefreshNumber = 8;
-Command.ModeRegisterDefinition = 0;
-
-HAL_SDRAM_SendCommand(&hsdram2, &Command, SDRAM_TIMEOUT);
-
-// 第五步，编程 SDRAM 的加载模式寄存器
-tmpr = (uint32_t)SDRAM_MODEREG_BURST_LENGTH_1 |
-SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL |
-SDRAM_MODEREG_CAS_LATENCY_3 |
-SDRAM_MODEREG_OPERATING_MODE_STANDARD |
-SDRAM_MODEREG_WRITEBURST_MODE_SINGLE;
-
-/* 配置命令：设置SDRAM寄存器 */
-Command.CommandMode = FMC_SDRAM_CMD_LOAD_MODE;
-Command.CommandTarget = FMC_SDRAM_CMD_TARGET_BANK2;
-Command.AutoRefreshNumber = 1;
-Command.ModeRegisterDefinition = tmpr;
-
-HAL_SDRAM_SendCommand(&hsdram2, &Command, SDRAM_TIMEOUT);
-
-// 第六步，配置STM32FMC的 SDRAM 控制器的自动刷新周期
-HAL_SDRAM_ProgramRefreshRate(&hsdram2, 918);
-
-```
-示例
- ```
-/**
- * @brief  FMC SDRAM 模式配置的寄存器相关定义
- */
-#define SDRAM_MODEREG_BURST_LENGTH_1 ((uint16_t)0x0000)
-#define SDRAM_MODEREG_BURST_LENGTH_2 ((uint16_t)0x0001)
-#define SDRAM_MODEREG_BURST_LENGTH_4 ((uint16_t)0x0002)
-#define SDRAM_MODEREG_BURST_LENGTH_8 ((uint16_t)0x0004)
-#define SDRAM_MODEREG_BURST_TYPE_SEQUENTIAL ((uint16_t)0x0000)
-#define SDRAM_MODEREG_BURST_TYPE_INTERLEAVED ((uint16_t)0x0008)
-#define SDRAM_MODEREG_CAS_LATENCY_2 ((uint16_t)0x0020)
-#define SDRAM_MODEREG_CAS_LATENCY_3 ((uint16_t)0x0030)
-#define SDRAM_MODEREG_OPERATING_MODE_STANDARD ((uint16_t)0x0000)
-#define SDRAM_MODEREG_WRITEBURST_MODE_PROGRAMMED ((uint16_t)0x0000)
-#define SDRAM_MODEREG_WRITEBURST_MODE_SINGLE ((uint16_t)0x0200)
-
-
+```text
+SOF(2) + Length(2, little-endian) + CMD(1) + SEQ(1) + Payload(N) + CRC16(2, little-endian)
 ```
 
-st7701相关
+- `SOF`: `0xAA 0x55`
+- `Length`: `CMD + SEQ + Payload` 的字节数
+- `SEQ`: 请求方递增序号；固件响应必须回同一个 `SEQ`
+- `CRC16`: Modbus CRC16，初值 `0xFFFF`，多项式 `0xA001`，little-endian
+- `Payload`: TLV 列表，格式为 `Type(1) + Length(2, little-endian) + Value(N)`
+
+## 命令码
+
+| 名称 | 值 | 方向 | Payload | 说明 |
+| --- | ---: | --- | --- | --- |
+| `ACK` | `0x00` | 固件 -> 上位机 | TLV 列表或空 | 请求成功响应。`READ` 成功时返回请求的数据；`WRITE` 成功时为空。 |
+| `READ` | `0x01` | 上位机 -> 固件 | TLV 查询列表 | 每个 TLV 只填 `Type`，`Length=0`。 |
+| `WRITE` | `0x02` | 上位机 -> 固件 | TLV 写入列表 | 每个 TLV 填 `Type`、长度和 little-endian 值。 |
+| `REPORT` | `0x03` | 双向 | 请求空载荷；响应 TLV 列表 | 上位机发送空 payload 请求状态组，固件返回一帧 `REPORT`。 |
+| `NACK` | `0xFF` | 固件 -> 上位机 | 空 | 命令、类型、长度、权限或载荷错误。 |
+
+## 访问权限
+
+| 名称 | 值 | 说明 |
+| --- | ---: | --- |
+| `READ` | `0x01` | 可读 |
+| `WRITE` | `0x02` | 可写 |
+| `READ_WRITE` | `0x03` | 可读可写 |
+
+## 数据类型
+
+| 名称 | Type | 长度 | 权限 | 单位 | 说明 |
+| --- | ---: | ---: | --- | --- | --- |
+| `INPUT_VOLTAGE` | `10` | 4 | READ | mV | 输入电压 |
+| `INPUT_CURRENT` | `11` | 4 | READ | mA | 输入电流，非负值；小于 0 的测量结果不编码，按 0 上报 |
+| `OUTPUT_VOLTAGE` | `12` | 4 | READ | mV | 输出电压 |
+| `OUTPUT_CURRENT` | `13` | 4 | READ | mA | 输出电流，非负值；小于 0 的测量结果不编码，按 0 上报 |
+| `CORE_TEMPERATURE` | `14` | 4 | READ | mC | 核心温度，摄氏度 x1000 |
+| `BOARD_TEMPERATURE` | `15` | 4 | READ | mC | 板载温度，摄氏度 x1000 |
+| `SET_VOLTAGE_LIMIT` | `17` | 4 | READ_WRITE | mV | 输出电压设定 |
+| `SET_CURRENT_LIMIT` | `18` | 4 | READ_WRITE | mA | 输出电流设定 |
+| `CC_CV_MODE` | `20` | 1 | READ | enum | `0=CC`, `1=CV` |
+| `POWER_STATE` | `21` | 1 | READ_WRITE | bool | `0=OFF`, `1=ON` |
+| `FAULT_STATE` | `22` | 4 | READ | bitmask | 故障位图 |
+| `STATE_MACHINE_FLAG_BITS` | `23` | 1 | READ | bitmask | `0x01=INIT`, `0x02=WAIT`, `0x04=RISE`, `0x08=RUN`, `0x0F=ERR` |
+| `STATE_MACHINE_STATE` | `24` | 1 | READ | enum | 当前功率拓扑：`0=NA`, `1=BUCK`, `2=BOOST`, `3=MIX` |
+| `INPUT_VOLTAGE_RAW` | `25` | 4 | READ | adc | 输入电压 ADC 原始值 |
+| `INPUT_CURRENT_RAW` | `26` | 4 | READ | adc | 输入电流 ADC 原始值 |
+| `OUTPUT_VOLTAGE_RAW` | `27` | 4 | READ | adc | 输出电压 ADC 原始值 |
+| `OUTPUT_CURRENT_RAW` | `28` | 4 | READ | adc | 输出电流 ADC 原始值 |
+| `OTP_VALUE` | `29` | 4 | READ | mC | 当前过温保护参考值 |
+| `OTP_SET_VALUE` | `30` | 4 | READ_WRITE | mC | 过温保护设定 |
+| `OVP_VALUE` | `31` | 4 | READ | mV | 当前过压保护参考值 |
+| `OVP_SET_VALUE` | `32` | 4 | READ_WRITE | mV | 过压保护设定 |
+| `OCP_VALUE` | `33` | 4 | READ | mA | 当前过流保护参考值 |
+| `OCP_SET_VALUE` | `34` | 4 | READ_WRITE | mA | 过流保护设定 |
+| `DUTY_CMD` | `35` | 4 | READ | tick | 当前控制占空比命令 |
+| `PWM_A_COMPARE` | `36` | 4 | READ | tick | 输入端 A 侧 PWM 比较值/占空比监控 |
+| `PWM_D_COMPARE` | `37` | 4 | READ | tick | 输出端 D 侧 PWM 比较值/占空比监控 |
+| `FAN_SPEED` | `38` | 4 | READ | permille | 风扇当前值，0 到 1000 |
+| `FAN_SET_VALUE` | `39` | 4 | READ_WRITE | permille | 风扇设定值，0 到 1000 |
+| `DEBUG_SNAPSHOT` | `40` | 0 | READ | virtual | 虚拟读取项。请求 `Type=40, Length=0`；响应返回控制环调试 TLV 组合。 |
+| `LOOP_CURRENT_FEEDBACK` | `41` | 4 | READ | mA | 控制环输出电流反馈值 |
+| `LOOP_CURRENT_REFERENCE` | `42` | 4 | READ | mA | 控制环输出电流参考/限流值 |
+| `VOLTAGE_LOOP_CURRENT_REFERENCE` | `43` | 4 | READ | mV | 控制环电压参考值；名称保留历史兼容 |
+
+## 状态组上报
+
+上位机发送：
+
+```text
+CMD=REPORT, Payload = empty
 ```
-#ifdef BIST MODE  //1 open
 
-SPI_write_comm(0xFF);
-SPI_write_data(0x77);
-SPI_write_data(0x01);
-SPI_write_data(0x00);
-SPI_write_data(0x00);
-SPI_write_data(0x12);
-SPI_write_comm(0xD1);
-SPI_write_data(0x81);
-SPI_write_data(0x08);
-SPI_write_data(0x03);
-SPI_write_data(0x20);
-SPI_write_data(0x08);
-SPI_write_data(0x01);
-SPI_write_data(0xA0);
-SPI_write_data(0x01);
-SPI_write_data(0xE0);
-SPI_write_data(0xA0);
-SPI_write_data(0x01);
-SPI_write_data(0xE0);
-SPI_write_data(0x03);
-SPI_write_data(0x20);
-SPI_write_comm(0xD2);
-/*0x08:colorbar,0X02: red*/
-SPI_write_data(0x08);
+固件返回：
 
-#endif
+```text
+CMD=REPORT, Payload =
+  TLV(INPUT_VOLTAGE)
+  TLV(INPUT_CURRENT)
+  TLV(OUTPUT_VOLTAGE)
+  TLV(OUTPUT_CURRENT)
+  TLV(CORE_TEMPERATURE)
+  TLV(BOARD_TEMPERATURE)
+  TLV(SET_VOLTAGE_LIMIT)
+  TLV(SET_CURRENT_LIMIT)
+  TLV(CC_CV_MODE)
+  TLV(POWER_STATE)
+  TLV(FAULT_STATE)
+  TLV(STATE_MACHINE_FLAG_BITS)
+  TLV(STATE_MACHINE_STATE)
+  TLV(INPUT_CURRENT_RAW)
+  TLV(OUTPUT_CURRENT_RAW)
+  TLV(OTP_VALUE)
+  TLV(OTP_SET_VALUE)
+  TLV(OVP_VALUE)
+  TLV(OVP_SET_VALUE)
+  TLV(OCP_VALUE)
+  TLV(OCP_SET_VALUE)
+  TLV(DUTY_CMD)
+  TLV(PWM_A_COMPARE)
+  TLV(PWM_D_COMPARE)
+  TLV(FAN_SPEED)
+  TLV(FAN_SET_VALUE)
+  TLV(LOOP_CURRENT_FEEDBACK)
+  TLV(LOOP_CURRENT_REFERENCE)
+  TLV(VOLTAGE_LOOP_CURRENT_REFERENCE)
+```
 
+## 常用请求
 
-SPI_write_comm(0x11);
+读取状态：
 
+```text
+CMD=READ, Payload = TLV(Type=10, Len=0) + TLV(Type=11, Len=0) + ...
+```
 
-delay 120ms
+写输出设定并开机：
 
-SPI_write_comm(0x29);
-
-// -- 
-
-// BOE2.8IPS(ZV028V0Q-N10-1QP0 )_ADS(480X640)_FW(Customer)-45Duty-190802.ini.txt
-HW_Reset();               //VBP>=16, INT_VFP=12, EXT_VFP>=14
-Delay(120);               //ms
-WriteComm (0xFF);
-WriteData (0x77);
-WriteData (0x01);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x13);
-WriteComm (0xEF);
-WriteData (0x08);
-WriteComm (0xFF);
-WriteData (0x77);
-WriteData (0x01);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x10);
-WriteComm (0xC0);
-WriteData (0x4F);
-WriteData (0x00);
-WriteComm (0xC1);
-WriteData (0x10);
-WriteData (0x0C);
-WriteComm (0xC2);
-WriteData (0x01);
-WriteData (0x14);
-WriteComm (0xCC);
-WriteData (0x10);
-WriteComm (0xB0);
-WriteData (0x0A);
-WriteData (0x18);
-WriteData (0x1E);
-WriteData (0x12);
-WriteData (0x16);
-WriteData (0x0C);
-WriteData (0x0E);
-WriteData (0x0D);
-WriteData (0x0C);
-WriteData (0x29);
-WriteData (0x06);
-WriteData (0x14);
-WriteData (0x13);
-WriteData (0x29);
-WriteData (0x33);
-WriteData (0x1C);
-WriteComm (0xB1);
-WriteData (0x0A);
-WriteData (0x19);
-WriteData (0x21);
-WriteData (0x0A);
-WriteData (0x0C);
-WriteData (0x00);
-WriteData (0x0C);
-WriteData (0x03);
-WriteData (0x03);
-WriteData (0x23);
-WriteData (0x01);
-WriteData (0x0E);
-WriteData (0x0C);
-WriteData (0x27);
-WriteData (0x2B);
-WriteData (0x1C);
-WriteComm (0xFF);
-WriteData (0x77);
-WriteData (0x01);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x11);
-WriteComm (0xB0);
-WriteData (0x5D);
-WriteComm (0xB1);
-WriteData (0x4F);
-WriteComm (0xB2);
-WriteData (0x00);
-WriteComm (0xB3);
-WriteData (0x80);
-WriteComm (0xB5);
-WriteData (0x0C);
-WriteComm (0xB7);
-WriteData (0x85);
-WriteComm (0xB8);
-WriteData (0x20);
-WriteComm (0xC1);
-WriteData (0x78);
-WriteComm (0xC2);
-WriteData (0x78);
-WriteComm (0xD0);
-WriteData (0x88);
-WriteComm (0xE0);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x02);
-WriteComm (0xE1);
-WriteData (0x06);
-WriteData (0xA0);
-WriteData (0x08);
-WriteData (0xA0);
-WriteData (0x05);
-WriteData (0xA0);
-WriteData (0x07);
-WriteData (0xA0);
-WriteData (0x00);
-WriteData (0x44);
-WriteData (0x44);
-WriteComm (0xE2);
-WriteData (0x20);
-WriteData (0x20);
-WriteData (0x44);
-WriteData (0x44);
-WriteData (0x96);
-WriteData (0xA0);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x96);
-WriteData (0xA0);
-WriteData (0x00);
-WriteData (0x00);
-WriteComm (0xE3);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x22);
-WriteData (0x22);
-WriteComm (0xE4);
-WriteData (0x44);
-WriteData (0x44);
-WriteComm (0xE5);
-WriteData (0x0D);
-WriteData (0x91);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteData (0x0F);
-WriteData (0x93);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteData (0x09);
-WriteData (0x8D);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteData (0x0B);
-WriteData (0x8F);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteComm (0xE6);
-WriteData (0x00);
-WriteData (0x00);
-WriteData (0x22);
-WriteData (0x22);
-WriteComm (0xE7);
-WriteData (0x44);
-WriteData (0x44);
-WriteComm (0xE8);
-WriteData (0x0C);
-WriteData (0x90);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteData (0x0E);
-WriteData (0x92);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteData (0x08);
-WriteData (0x8C);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteData (0x0A);
-WriteData (0x8E);
-WriteData (0x0A);
-WriteData (0xA0);
-WriteComm (0xE9);
-WriteData (0x36);
-WriteData (0x00);
-WriteComm (0xEB);
-WriteData (0x00);
-WriteData (0x01);
-WriteData (0xE4);
-WriteData (0xE4);
-WriteData (0x44);
-WriteData (0x88);
-WriteData (0x40);
-WriteComm (0xED);
-WriteData (0xFF);
-WriteData (0x45);
-WriteData (0x67);
-WriteData (0xFA);
-WriteData (0x01);
-WriteData (0x2B);
-WriteData (0xCF);
-WriteData (0xFF);
-WriteData (0xFF);
-WriteData (0xFC);
-WriteData (0xB2);
-WriteData (0x10);
-WriteData (0xAF);
-WriteData (0x76);
-WriteData (0x54);
-WriteData (0xFF);
-WriteComm (0xEF);
-WriteData (0x10);
-WriteData (0x0D);
-WriteData (0x04);
-WriteData (0x08);
-WriteData (0x3F);
-WriteData (0x1F);
-WriteComm (0x3A);
-WriteData (0x66);
-WriteComm (0x11);
-Delay_ms(120);
-WriteComm (0x36);
-WriteData (0x00);
-WriteComm (0x35);
-WriteData (0x00);
-WriteComm (0x29);
-
-
+```text
+CMD=WRITE
+Payload =
+  TLV(Type=17, Len=4, Value=set_voltage_mv)
+  TLV(Type=18, Len=4, Value=set_current_ma)
+  TLV(Type=21, Len=1, Value=1)
 ```

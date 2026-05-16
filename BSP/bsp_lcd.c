@@ -66,9 +66,62 @@ static void lcd_clean_dcache(const uint32_t addr, const uint32_t size) {
 	SCB_CleanDCache_by_Addr((uint32_t *) aligned_addr, (int32_t) aligned_size);
 }
 
+static void lcd_invalidate_dcache(const uint32_t addr, const uint32_t size) {
+	uintptr_t aligned_addr;
+	uint32_t aligned_size;
+
+	aligned_addr = (uintptr_t) addr & ~(uintptr_t) 31U;
+	aligned_size = size + (uint32_t) ((uintptr_t) addr - aligned_addr);
+	aligned_size = (aligned_size + 31U) & ~31U;
+
+	SCB_InvalidateDCache_by_Addr((uint32_t *) aligned_addr, (int32_t) aligned_size);
+}
+
+static uint32_t lcd_get_rect_span_bytes(const uint32_t psx, const uint32_t psy, const uint32_t pex, const uint32_t pey) {
+	return LCD_DEV.pixsize * (LTDC_WIDTH * (pey - psy) + (pex - psx + 1U));
+}
+
 uint32_t LCD_GetDrawBufferAddress(void) {
 	return g_lcd_draw_buffer_addr;
 	}
+
+void LCD_CopyRectFromFrontToDraw(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+	uint32_t psx;
+	uint32_t psy;
+	uint32_t pex;
+	uint32_t pey;
+	uint32_t row_bytes;
+	uint32_t rows;
+	uint32_t row;
+
+	if (w == 0U || h == 0U) {
+		return;
+	}
+	if (g_lcd_draw_buffer_addr == g_lcd_front_buffer_addr) {
+		return;
+	}
+	if (x >= LCD_DEV.width || y >= LCD_DEV.height) {
+		return;
+	}
+
+	if ((uint32_t) x + w > LCD_DEV.width) {
+		w = (uint16_t) (LCD_DEV.width - x);
+	}
+	if ((uint32_t) y + h > LCD_DEV.height) {
+		h = (uint16_t) (LCD_DEV.height - y);
+	}
+
+	lcd_map_rect_to_physical(x, y, (uint16_t) (x + w - 1U), (uint16_t) (y + h - 1U), &psx, &psy, &pex, &pey);
+
+	row_bytes = (pex - psx + 1U) * LCD_DEV.pixsize;
+	rows = pey - psy + 1U;
+
+	for (row = 0U; row < rows; ++row) {
+		(void) memcpy((void *) (g_lcd_draw_buffer_addr + LCD_DEV.pixsize * (LTDC_WIDTH * (psy + row) + psx)),
+					  (const void *) (g_lcd_front_buffer_addr + LCD_DEV.pixsize * (LTDC_WIDTH * (psy + row) + psx)),
+					  row_bytes);
+	}
+}
 
 void LCD_Present(void) {
 	uint32_t old_front_addr;
@@ -123,7 +176,7 @@ void LTDC_Switch(uint8_t sw) {
 //x,y:坐标
 //color:颜色
 void LTDC_Draw_Point(uint16_t x, uint16_t y, uint32_t color) {
-	*(uint16_t*) lcd_get_pixel_address(g_lcd_draw_buffer_addr, x, y) = color;
+	*(uint16_t*) lcd_get_pixel_address(g_lcd_draw_buffer_addr, x, y) = LCD_EncodeColor((uint16_t) color);
 }
 
 //设置LCD显示方向
@@ -170,6 +223,7 @@ void LCD_Rect_Fill(const uint16_t sx, const uint16_t sy, const uint16_t ex, cons
 	uint32_t pex;
 	uint32_t pey;
 	uint32_t timeout = 0;
+	uint32_t span_bytes;
 	uint16_t offline;
 	uint32_t addr;
 
@@ -177,6 +231,8 @@ void LCD_Rect_Fill(const uint16_t sx, const uint16_t sy, const uint16_t ex, cons
 
 	offline = LTDC_WIDTH - (uint16_t) (pex - psx + 1U);
 	addr = g_lcd_draw_buffer_addr + LCD_DEV.pixsize * (LTDC_WIDTH * psy + psx);
+	span_bytes = lcd_get_rect_span_bytes(psx, psy, pex, pey);
+	lcd_clean_dcache(addr, span_bytes);
 	RCC->AHB1ENR |= 1 << 23;								//使能DM2D时钟
 	DMA2D->CR = 3 << 16;									//寄存器到存储器模式
 	DMA2D->OPFCCR = LTDC_PIXEL_FORMAT_RGB565;							//设置颜色格式
@@ -184,7 +240,7 @@ void LCD_Rect_Fill(const uint16_t sx, const uint16_t sy, const uint16_t ex, cons
 	DMA2D->CR &= ~(1 << 0);									//先停止DMA2D
 	DMA2D->OMAR = addr;										//输出存储器地址
 	DMA2D->NLR = (uint32_t) ((pey - psy + 1U) | ((pex - psx + 1U) << 16)); //设定行数寄存器
-	DMA2D->OCOLR = color;									//设定输出颜色寄存器
+	DMA2D->OCOLR = LCD_EncodeColor((uint16_t) color);									//设定输出颜色寄存器
 	DMA2D->CR |= 1 << 0;									//启动DMA2D
 	while ((DMA2D->ISR & (1 << 1)) == 0)					//等待传输完成
 	{
@@ -193,6 +249,7 @@ void LCD_Rect_Fill(const uint16_t sx, const uint16_t sy, const uint16_t ex, cons
 			break; //超时退出
 	}
 	DMA2D->IFCR |= 1 << 1; //清除传输完成标志
+	lcd_invalidate_dcache(addr, span_bytes);
 }
 
 //在指定区域内填充指定颜色块
@@ -201,11 +258,14 @@ void LCD_Rect_Fill(const uint16_t sx, const uint16_t sy, const uint16_t ex, cons
 void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t *color) {
 	uint32_t psx, psy, pex, pey; //以LCD面板为基准的坐标系,不随横竖屏变化而变化
 	uint32_t timeout = 0;
+	uint32_t span_bytes;
 	uint16_t offline;
 	uint32_t addr;
 	lcd_map_rect_to_physical(sx, sy, ex, ey, &psx, &psy, &pex, &pey);
 	offline = LTDC_WIDTH - (uint16_t) (pex - psx + 1U);
 	addr = g_lcd_draw_buffer_addr + LCD_DEV.pixsize * (LTDC_WIDTH * psy + psx);
+	span_bytes = lcd_get_rect_span_bytes(psx, psy, pex, pey);
+	lcd_clean_dcache(addr, span_bytes);
 	__HAL_DMA2D_CLEAR_FLAG(&hdma2d, DMA2D_FLAG_TC);			//清除传输完成标志
 	RCC->AHB1ENR |= 1 << 23;								//使能DM2D时钟
 	DMA2D->CR &= ~(DMA2D_CR_START);							//先停止 DMA2D
@@ -225,6 +285,7 @@ void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t
 			break; //超时退出
 	}
 	DMA2D->IFCR |= 1 << 1; //清除传输完成标志
+	lcd_invalidate_dcache(addr, span_bytes);
 }
 
 //画线

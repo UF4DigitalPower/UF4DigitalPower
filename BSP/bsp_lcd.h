@@ -67,6 +67,16 @@ extern uint16_t ltdc_lcd_framebuf[LTDC_HEIGHT][LTDC_WIDTH];
 #define LGRAYBLUE 0XA651 //浅灰蓝色(中间层颜色)
 #define LBBLUE 0X2B12	 //浅棕蓝色(选择条目的反色)
 
+#define LCD_PANEL_INVERTED_COLORS 0U
+
+static inline uint16_t LCD_EncodeColor(uint16_t color) {
+#if LCD_PANEL_INVERTED_COLORS
+	return (uint16_t) (color ^ 0xFFFFU);
+#else
+	return color;
+#endif
+}
+
 
 
 #ifdef __cplusplus
@@ -103,5 +113,6 @@ void LCD_Color_Fill(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t
 
 void LCD_SetDisplayDir(uint8_t dir);
 uint32_t LCD_GetDrawBufferAddress(void);
+void LCD_CopyRectFromFrontToDraw(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void LCD_Present(void);
 #endif /* STM32H743_BSP_LCD_H */

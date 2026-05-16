@@ -6,8 +6,8 @@
 #include "ui_page.h"
 
 void UI_PageDrawFrame(const char *title, const ui_page_id_t current_page) {
-	static const char *tabs[UI_PAGE_COUNT] = {"HOME", "SET", "MENU"};
-	uint16_t tab_x = 340U;
+	static const char *tabs[UI_PAGE_COUNT] = {"POWER", "SET", "STATE"};
+	uint16_t tab_x = 330U;
 	uint8_t i;
 
 	UI_FillRect(0U, 0U, LCD_DEV.width, LCD_DEV.height, UI_COLOR_BACKGROUND);
@@ -20,9 +20,9 @@ void UI_PageDrawFrame(const char *title, const ui_page_id_t current_page) {
 	for (i = 0U; i < (uint8_t) UI_PAGE_COUNT; ++i) {
 		ui_button_t button = {
 			.x = tab_x,
-			.y = 12U,
-			.w = 84U,
-			.h = 32U,
+			.y = 10U,
+			.w = 96U,
+			.h = 36U,
 			.text = tabs[i],
 			.text_color = UI_COLOR_TEXT,
 			.bg_color = UI_COLOR_PANEL,
@@ -30,9 +30,10 @@ void UI_PageDrawFrame(const char *title, const ui_page_id_t current_page) {
 			.accent_color = UI_COLOR_ACCENT,
 			.focused = (bool) (i == (uint8_t) current_page),
 			.active = false,
+			.scale = 2U,
 		};
 		UI_ButtonDraw(&button);
-		tab_x = (uint16_t) (tab_x + 94U);
+		tab_x = (uint16_t) (tab_x + 102U);
 	}
 }
 

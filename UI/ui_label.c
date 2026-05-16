@@ -22,6 +22,7 @@ void UI_ButtonDraw(const ui_button_t *button) {
 	uint16_t fill_color;
 	uint16_t text_color;
 	uint16_t border_color;
+	uint8_t text_scale;
 
 	if (button == NULL || button->text == NULL) {
 		return;
@@ -30,6 +31,7 @@ void UI_ButtonDraw(const ui_button_t *button) {
 	fill_color = button->bg_color;
 	text_color = button->text_color;
 	border_color = button->border_color;
+	text_scale = (button->scale == 0U) ? 1U : button->scale;
 
 	if (button->active) {
 		border_color = button->accent_color;
@@ -51,5 +53,5 @@ void UI_ButtonDraw(const ui_button_t *button) {
 	}
 
 	UI_DrawTextBox(button->x, button->y, button->w, button->h, button->text,
-				   text_color, fill_color, 1U, UI_ALIGN_CENTER);
+				   text_color, fill_color, text_scale, UI_ALIGN_CENTER);
 }
