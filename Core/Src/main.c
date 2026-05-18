@@ -23,7 +23,6 @@
 #include "dma2d.h"
 #include "i2c.h"
 #include "ltdc.h"
-#include "memorymap.h"
 #include "quadspi.h"
 #include "spi.h"
 #include "tim.h"
@@ -35,9 +34,12 @@
 /* USER CODE BEGIN Includes */
 #include "bsp_lcd.h"
 #include "bsp_st7701.h"
+#include "gui_lvgl_port.h"
+#include "gui_lvgl_scenes.h"
+
+#include "lvgl.h"
 #include "power_comm.h"
 #include "ui.h"
-
 #include <string.h>
 
 /* USER CODE END Includes */
@@ -50,6 +52,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+#define APP_RUN_LVGL_TEST_SCENES 1
 
 /* USER CODE END PD */
 
@@ -185,41 +188,37 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
-  if (HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  if (HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK)
-  {
-    Error_Handler();
-  }
+  HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
+  HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+  HAL_TIM_Base_Start_IT(&htim6);
 
   LCD_Init();
   ST7701Init();
   LCD_SetDisplayDir(1);
+  // DigitalPower
+
   HAL_LTDC_SetAddress(&hltdc, (uint32_t) ltdc_lcd_framebuf, 0);
+
   LCD_Clear(BLACK);
 
-  PowerComm_Init(&huart1);
-
-  UI_SetDemoEnabled(false);
-
-  UI_SetActionCallback(App_OnUiAction, NULL);
-
-  UI_Init();
-  {
-    ui_power_snapshot_t snapshot;
-    UI_GetPowerSnapshot(&snapshot);
-    g_last_sent_vset_mv = snapshot.vset_mv;
-    g_last_sent_iset_ma = snapshot.iset_ma;
-    g_last_sent_output_enabled = snapshot.output_enabled;
-  }
+#if APP_RUN_LVGL_TEST_SCENES
+  GUI_LVGL_PortInit();
+  GUI_LVGL_TestScenesStart();
+#else
+  // PowerComm_Init(&huart1);
+  //
+  // UI_SetDemoEnabled(1);
+  // UI_SetActionCallback(App_OnUiAction, NULL);
+  //
+  // UI_Init();
+  // {
+  //   ui_power_snapshot_t snapshot;
+  //   UI_GetPowerSnapshot(&snapshot);
+  //   g_last_sent_vset_mv = snapshot.vset_mv;
+  //   g_last_sent_iset_ma = snapshot.iset_ma;
+  //   g_last_sent_output_enabled = snapshot.output_enabled;
+  // }
+#endif
 
   // LCD_TestLoop();
 
@@ -231,10 +230,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#if APP_RUN_LVGL_TEST_SCENES
+    HAL_Delay(1);
+    lv_timer_handler();
+#else
     HAL_Delay(5);
-    UI_Tick();
-    App_SyncUiSettings();
-    App_PollPowerComm();
+    // UI_Tick();
+    // App_SyncUiSettings();
+    // App_PollPowerComm();
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

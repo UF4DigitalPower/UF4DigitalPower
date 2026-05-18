@@ -115,4 +115,5 @@ void LCD_SetDisplayDir(uint8_t dir);
 uint32_t LCD_GetDrawBufferAddress(void);
 void LCD_CopyRectFromFrontToDraw(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
 void LCD_Present(void);
+void LCD_PresentBuffer(uint32_t buffer_addr);
 #endif /* STM32H743_BSP_LCD_H */

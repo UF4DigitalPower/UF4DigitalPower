@@ -1,0 +1,6 @@
+#ifndef STM32H743_GUI_LVGL_PORT_H
+#define STM32H743_GUI_LVGL_PORT_H
+
+void GUI_LVGL_PortInit(void);
+
+#endif /* STM32H743_GUI_LVGL_PORT_H */

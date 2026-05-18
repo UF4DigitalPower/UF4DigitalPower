@@ -231,6 +231,30 @@ static void ui_draw_metric_card(const uint16_t x, const uint16_t y, const uint16
 						 const char *title, const int32_t raw_value, const int32_t divisor,
 						 const uint8_t decimals, const char *unit, const uint16_t accent_color,
 						 const bool warning) {
+	char value_text[24];
+	uint16_t value_area_y;
+	uint16_t value_area_h;
+	uint16_t value_y;
+	uint16_t unit_y;
+
+	if (!g_ui.full_redraw) {
+		if (unit == NULL) {
+			return;
+		}
+
+		value_area_y = (uint16_t) (y + ((h >= 100U) ? 42U : 28U));
+		value_area_h = (uint16_t) (h - ((h >= 100U) ? 44U : 30U));
+		value_y = (uint16_t) (y + ((h >= 100U) ? 52U : 36U));
+		unit_y = (uint16_t) (y + h - ((h >= 100U) ? 32U : 24U));
+
+		UI_FillRect((uint16_t) (x + 2U), value_area_y, (uint16_t) (w - 4U), value_area_h, UI_COLOR_CARD);
+		UI_FormatScaled(value_text, sizeof(value_text), raw_value, divisor, decimals);
+		UI_DrawText((uint16_t) (x + 10U), value_y, value_text, UI_COLOR_TEXT, UI_COLOR_CARD, 3U);
+		UI_DrawTextBox((uint16_t) (x + w - 54U), unit_y, 44U, 22U, unit,
+					   UI_COLOR_TEXT_DIM, UI_COLOR_CARD, 1U, UI_ALIGN_RIGHT);
+		return;
+	}
+
 	ui_value_widget_t card = {
 		.x = x,
 		.y = y,

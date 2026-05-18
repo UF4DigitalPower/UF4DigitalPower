@@ -1,0 +1,6 @@
+#ifndef STM32H743_GUI_LVGL_SCENES_H
+#define STM32H743_GUI_LVGL_SCENES_H
+
+void GUI_LVGL_TestScenesStart(void);
+
+#endif /* STM32H743_GUI_LVGL_SCENES_H */

@@ -69,6 +69,10 @@ include_directories(Core/Inc
 
         BSP
 
+        GUI
+        GUI/src
+        GUI/demos
+
         UI
         UI/Font
 )
@@ -79,6 +83,8 @@ file(GLOB_RECURSE SOURCES
         "Core/*.*"
         "Drivers/*.*"
         "BSP/*.*"
+        "GUI/src/*.c"
+        "GUI/demos/benchmark/*.c"
         "UI/*.*"
 )
 
