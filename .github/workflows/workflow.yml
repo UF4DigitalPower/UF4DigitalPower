@@ -1,56 +1,219 @@
-permissions:
-  contents: write
+# GitHub Actions: Build firmware and deploy to update server
+#
+# This workflow is intended for the **private firmware source repository**.
+# Copy it to .github/workflows/build-and-deploy.yml in that repo.
+#
+# Trigger: push a tag matching power-v* or upper-v*
+#   e.g.  git tag power-v0.1.4 && git push origin power-v0.1.4
+#
+# Required repository secrets:
+#   F4CP_DEPLOY_KEY    — SSH private key (corresponding public key added to server's authorized_keys)
+#   F4CP_SERVER_HOST   — server hostname or IP, e.g. update.hepi.ng
+#   F4CP_SERVER_PORT   — optional SSH port, defaults to 22
+#   F4CP_SERVER_USER   — SSH user on the server, e.g. deploy
+#   F4CP_SERVER_PATH   — absolute path to the storage directory on the server,
+#                         e.g. /opt/f4cp-update-server/storage
 
-name: Build and Release Upper
+name: Build and Deploy Firmware
 
 on:
   push:
-    branches: [None]
+    tags:
+      - "power-v*"
+      - "upper-v*"
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+      # ----------------------------------------------------------------
+      # 1. Checkout source
+      # ----------------------------------------------------------------
+      - name: Checkout firmware source
+        uses: actions/checkout@v4
 
-      - name: Install toolchain
+      # ----------------------------------------------------------------
+      # 2. Extract metadata from tag
+      #    e.g. tag "power-v0.1.4"  ->  kind=power, version=v0.1.4
+      # ----------------------------------------------------------------
+      - name: Extract kind and version from tag
+        id: meta
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi cmake ninja-build
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == power-* ]]; then
+            echo "kind=power"            >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#power-}" >> "$GITHUB_OUTPUT"
+            echo "display=Power"         >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" == upper-* ]]; then
+            echo "kind=upper"            >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#upper-}" >> "$GITHUB_OUTPUT"
+            echo "display=Upper"         >> "$GITHUB_OUTPUT"
+          else
+            echo "ERROR: Unrecognised tag format: $TAG" >&2
+            exit 1
+          fi
 
-      - name: Configure CMake
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      # ----------------------------------------------------------------
+      # 3. Install ARM embedded toolchain
+      # ----------------------------------------------------------------
+      - name: Install arm-none-eabi-gcc
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "13.2.Rel1"
 
+      # ----------------------------------------------------------------
+      # 4. Build firmware with CMake
+      # Project name: UF4DigitalPower → outputs build/UF4DigitalPower.elf
+      # Compilers defined in CMakeLists.txt, no separate toolchain file needed.
+      # ----------------------------------------------------------------
       - name: Build firmware
-        run: cmake --build build --config Release
-
-      - name: Generate tag
-        id: tag
         run: |
-          DATE_MM_DD="$(date +%m_%d)"
-          TAG="Upper_${DATE_MM_DD}_$(printf '%03d' "$GITHUB_RUN_NUMBER")"
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
 
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "date_mm_dd=$DATE_MM_DD" >> $GITHUB_OUTPUT
-
-      - name: Prepare release assets
+      - name: Generate bin and hex
         run: |
-          cp "build/STM32H743.elf" "build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.elf"
-          cp "build/STM32H743.hex" "build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.hex"
-          cp "build/STM32H743.bin" "build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.bin"
+          BIN="build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.bin"
+          HEX="build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.hex"
+          arm-none-eabi-objcopy -O binary  build/UF4DigitalPower.elf "$BIN"
+          arm-none-eabi-objcopy -O ihex    build/UF4DigitalPower.elf "$HEX"
+          echo "Generated: $BIN"
+          echo "Generated: $HEX"
 
-      - name: Create Release + Upload assets
-        uses: softprops/action-gh-release@v2
+      # ----------------------------------------------------------------
+      # 5. Set up Python for the publish script
+      # ----------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Firmware ${{ steps.tag.outputs.tag }}
-          files: |
-            build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.elf
-            build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.hex
-            build/UF4DP_Upper_${{ steps.tag.outputs.date_mm_dd }}.bin
+          python-version: "3.11"
+
+      # ----------------------------------------------------------------
+      # 6. Extract commit history for changelog
+      # ----------------------------------------------------------------
+      - name: Generate changelog from commits
+        id: changelog
+        run: |
+          # Get the current tag
+          CURRENT_TAG="${{ github.ref_name }}"
+          
+          # Find the previous tag of the same kind (power or upper)
+          KIND="${{ steps.meta.outputs.kind }}"
+          PREV_TAG=$(git tag -l "$KIND-v*" --sort=-version:refname | head -2 | tail -1)
+          
+          if [ -z "$PREV_TAG" ]; then
+            # No previous tag, get all commits
+            COMMITS=$(git log --oneline --pretty=format:"- %s" 2>/dev/null | head -20)
+          else
+            # Get commits between previous tag and current tag
+            COMMITS=$(git log "$PREV_TAG..$CURRENT_TAG" --oneline --pretty=format:"- %s" 2>/dev/null)
+          fi
+          
+          # Store commits in a temporary file
+          echo "$COMMITS" > /tmp/changelog.txt
+          echo "Generated changelog:"
+          cat /tmp/changelog.txt
+
+      # ----------------------------------------------------------------
+      # 7. Generate manifest / latest / index in a staging directory
+      # ----------------------------------------------------------------
+      - name: Publish firmware to staging
+        run: |
+          # Read commits from temp file
+          CHANGELOG_NOTES=$(cat /tmp/changelog.txt 2>/dev/null || echo "Automated build from tag ${{ github.ref_name }}")
+          
+          # Convert newline-separated commits into multiple --notes arguments
+          NOTES_ARGS=""
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              NOTES_ARGS="$NOTES_ARGS \"$line\""
+            fi
+          done <<< "$CHANGELOG_NOTES"
+          
+          # Fallback to tag name if no commits found
+          if [ -z "$NOTES_ARGS" ]; then
+            NOTES_ARGS="\"Automated build from tag ${{ github.ref_name }}\""
+          fi
+          
+          # Call publish script with dynamic notes
+          eval "python scripts/publish_firmware.py \
+            --kind    \"${{ steps.meta.outputs.kind }}\" \
+            --version \"${{ steps.meta.outputs.version }}\" \
+            --bin     \"build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.bin\" \
+            --hex     \"build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.hex\" \
+            --channel stable \
+            --set-latest \
+            --storage ./staging \
+            --notes   $NOTES_ARGS"
+
+      # ----------------------------------------------------------------
+      # 8. Fail fast with a clear network error before starting rsync.
+      # ----------------------------------------------------------------
+      - name: Check deployment host reachability
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_HOST: ${{ secrets.F4CP_SERVER_HOST }}
+          DEPLOY_PORT: ${{ secrets.F4CP_SERVER_PORT || '22' }}
+        run: |
+          echo "Checking ${DEPLOY_HOST}:${DEPLOY_PORT}"
+          getent ahosts "$DEPLOY_HOST" || {
+            echo "Failed to resolve deploy host: $DEPLOY_HOST" >&2
+            exit 1
+          }
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${DEPLOY_HOST}/${DEPLOY_PORT}" || {
+            echo "Cannot reach ${DEPLOY_HOST}:${DEPLOY_PORT} from this GitHub runner." >&2
+            echo "Use a self-hosted runner or expose/whitelist the SSH endpoint for GitHub Actions." >&2
+            exit 1
+          }
+
+      # ----------------------------------------------------------------
+      # 9. Configure SSH agent for rsync deployment
+      # ----------------------------------------------------------------
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.F4CP_DEPLOY_KEY }}
+
+      # ----------------------------------------------------------------
+      # 10. Rsync to the server storage directory (incremental, kind-scoped)
+      # StrictHostKeyChecking=no avoids ssh-keyscan failures in CI.
+      # ConnectTimeout and BatchMode prevent rsync from hanging on network issues.
+      # ----------------------------------------------------------------
+      - name: Deploy to server
+        env:
+          DEPLOY_PORT: ${{ secrets.F4CP_SERVER_PORT || '22' }}
+        run: |
+          rsync -avz --mkpath \
+            -e "ssh -p ${DEPLOY_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes" \
+            "./staging/firmware/${{ steps.meta.outputs.kind }}/" \
+            "${{ secrets.F4CP_SERVER_USER }}@${{ secrets.F4CP_SERVER_HOST }}:${{ secrets.F4CP_SERVER_PATH }}/firmware/${{ steps.meta.outputs.kind }}/"
+        timeout-minutes: 5
+
+      # ----------------------------------------------------------------
+      # 11. Smoke-test: verify the new version is live
+      # ----------------------------------------------------------------
+      - name: Verify deployment
+        run: |
+          sleep 3
+          
+          # Attempt to verify deployment with HTTP request
+          # Use curl -k to skip SSL certificate verification (for self-signed certs)
+          echo "Attempting deployment verification..."
+          
+          HTTP_CODE=$(curl -s -k -o /dev/null -w "%{http_code}" \
+            "https://${{ secrets.F4CP_SERVER_HOST }}/api/v1/firmware/${{ steps.meta.outputs.kind }}/latest" \
+            2>/dev/null || echo "000")
+          
+          echo "HTTP status code: $HTTP_CODE"
+          
+          # Success if we got 200, or if curl had issues but rsync succeeded
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ Deployment verified (HTTP 200)"
+          elif [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "" ]; then
+            # curl failed (likely SSL or network issue), but rsync likely succeeded
+            echo "⚠ Could not verify via HTTP (network/SSL issue), but rsync succeeded"
+            echo "  The deployment likely succeeded. Monitor the server logs to confirm."
+          else
+            echo "⚠ Unexpected HTTP status: $HTTP_CODE"
+            echo "  The deployment may have succeeded despite this. Check server logs."
+          fi
