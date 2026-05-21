@@ -76,8 +76,8 @@ jobs:
         run: |
           BIN="build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.bin"
           HEX="build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.hex"
-          arm-none-eabi-objcopy -O binary  build/UF4DigitalPower.elf "$BIN"
-          arm-none-eabi-objcopy -O ihex    build/UF4DigitalPower.elf "$HEX"
+          arm-none-eabi-objcopy -O binary  build/STM32H743.elf "$BIN"
+          arm-none-eabi-objcopy -O ihex    build/STM32H743.elf "$HEX"
           echo "Generated: $BIN"
           echo "Generated: $HEX"
 
