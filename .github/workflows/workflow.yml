@@ -1,0 +1,88 @@
+name: Build and Deploy Firmware
+
+on:
+  push:
+    tags:
+      - "power-v*"
+      - "upper-v*"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 从 tag 解析 kind 和 version
+      # power-v0.1.4  →  kind=power, version=v0.1.4
+      - name: Parse tag
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == power-* ]]; then
+            echo "kind=power"            >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#power-}" >> "$GITHUB_OUTPUT"
+            echo "display=Power"         >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" == upper-* ]]; then
+            echo "kind=upper"            >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#upper-}" >> "$GITHUB_OUTPUT"
+            echo "display=Upper"         >> "$GITHUB_OUTPUT"
+          fi
+
+      # 安装 ARM 交叉编译器
+      - name: Install arm-none-eabi-gcc
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: "13.2.Rel1"
+
+      # ⚠️ 根据你的项目修改这里的构建命令
+      - name: Build
+        run: |
+          make clean
+          make -j2
+        # 构建完成后需要产生：
+        # build/F4CP-Power-v0.1.4.bin
+        # build/F4CP-Power-v0.1.4.hex
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 生成 manifest / sha256 / latest / index 到 staging 目录
+      - name: Generate metadata
+        run: |
+          python scripts/publish_firmware.py \
+            --kind    "${{ steps.meta.outputs.kind }}" \
+            --version "${{ steps.meta.outputs.version }}" \
+            --bin "build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.bin" \
+            --hex "build/F4CP-${{ steps.meta.outputs.display }}-${{ steps.meta.outputs.version }}.hex" \
+            --channel stable \
+            --set-latest \
+            --storage ./staging \
+            --notes "Automated build ${{ github.ref_name }}"
+
+      # 配置 SSH
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.F4CP_DEPLOY_KEY }}
+
+      - name: Add known_hosts
+        run: |
+          ssh-keyscan -H "${{ secrets.F4CP_SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      # rsync 推送到服务器（只同步当前 kind 目录）
+      - name: Deploy
+        run: |
+          rsync -avz --mkpath \
+            "./staging/firmware/${{ steps.meta.outputs.kind }}/" \
+            "${{ secrets.F4CP_SERVER_USER }}@${{ secrets.F4CP_SERVER_HOST }}:${{ secrets.F4CP_SERVER_PATH }}/firmware/${{ steps.meta.outputs.kind }}/"
+
+      # 验证 API 可访问
+      - name: Verify
+        run: |
+          sleep 3
+          curl -sf "https://${{ secrets.F4CP_SERVER_HOST }}/api/v1/firmware/${{ steps.meta.outputs.kind }}/latest" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('Latest:', d['latest'])"
