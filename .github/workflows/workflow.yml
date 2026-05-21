@@ -9,6 +9,7 @@
 # Required repository secrets:
 #   F4CP_DEPLOY_KEY    — SSH private key (corresponding public key added to server's authorized_keys)
 #   F4CP_SERVER_HOST   — server hostname or IP, e.g. update.hepi.ng
+#   F4CP_SERVER_PORT   — optional SSH port, defaults to 22
 #   F4CP_SERVER_USER   — SSH user on the server, e.g. deploy
 #   F4CP_SERVER_PATH   — absolute path to the storage directory on the server,
 #                         e.g. /opt/f4cp-update-server/storage
@@ -104,7 +105,26 @@ jobs:
             --notes   "Automated build from tag ${{ github.ref_name }}"
 
       # ----------------------------------------------------------------
-      # 7. Configure SSH agent for rsync deployment
+      # 7. Fail fast with a clear network error before starting rsync.
+      # ----------------------------------------------------------------
+      - name: Check deployment host reachability
+        env:
+          DEPLOY_HOST: ${{ secrets.F4CP_SERVER_HOST }}
+          DEPLOY_PORT: ${{ secrets.F4CP_SERVER_PORT || '22' }}
+        run: |
+          echo "Checking ${DEPLOY_HOST}:${DEPLOY_PORT}"
+          getent ahosts "$DEPLOY_HOST" || {
+            echo "Failed to resolve deploy host: $DEPLOY_HOST" >&2
+            exit 1
+          }
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${DEPLOY_HOST}/${DEPLOY_PORT}" || {
+            echo "Cannot reach ${DEPLOY_HOST}:${DEPLOY_PORT} from this GitHub runner." >&2
+            echo "Use a self-hosted runner or expose/whitelist the SSH endpoint for GitHub Actions." >&2
+            exit 1
+          }
+
+      # ----------------------------------------------------------------
+      # 8. Configure SSH agent for rsync deployment
       # ----------------------------------------------------------------
       - name: Configure SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -112,20 +132,22 @@ jobs:
           ssh-private-key: ${{ secrets.F4CP_DEPLOY_KEY }}
 
       # ----------------------------------------------------------------
-      # 8. Rsync to the server storage directory (incremental, kind-scoped)
+      # 9. Rsync to the server storage directory (incremental, kind-scoped)
       # StrictHostKeyChecking=no avoids ssh-keyscan failures in CI.
       # ConnectTimeout and BatchMode prevent rsync from hanging on network issues.
       # ----------------------------------------------------------------
       - name: Deploy to server
+        env:
+          DEPLOY_PORT: ${{ secrets.F4CP_SERVER_PORT || '22' }}
         run: |
           rsync -avz --mkpath \
-            -e "ssh -p 1564 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes" \
+            -e "ssh -p ${DEPLOY_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes" \
             "./staging/firmware/${{ steps.meta.outputs.kind }}/" \
             "${{ secrets.F4CP_SERVER_USER }}@${{ secrets.F4CP_SERVER_HOST }}:${{ secrets.F4CP_SERVER_PATH }}/firmware/${{ steps.meta.outputs.kind }}/"
         timeout-minutes: 5
 
       # ----------------------------------------------------------------
-      # 9. Smoke-test: verify the new version is live
+      # 10. Smoke-test: verify the new version is live
       # ----------------------------------------------------------------
       - name: Verify deployment
         run: |
