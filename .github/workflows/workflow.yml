@@ -1,7 +1,7 @@
-# GitHub Actions: Build firmware and deploy to update server
+# GitHub Actions: Build firmware and deploy.ps1 to update server
 #
 # This workflow is intended for the **private firmware source repository**.
-# Copy it to .github/workflows/build-and-deploy.yml in that repo.
+# Copy it to .github/workflows/build-and-deploy.ps1.yml in that repo.
 #
 # Trigger: push a tag matching power-v* or upper-v*
 #   e.g.  git tag power-v0.1.4 && git push origin power-v0.1.4
@@ -10,7 +10,7 @@
 #   F4CP_DEPLOY_KEY    — SSH private key (corresponding public key added to server's authorized_keys)
 #   F4CP_SERVER_HOST   — server hostname or IP, e.g. update.hepi.ng
 #   F4CP_SERVER_PORT   — optional SSH port, defaults to 22
-#   F4CP_SERVER_USER   — SSH user on the server, e.g. deploy
+#   F4CP_SERVER_USER   — SSH user on the server, e.g. deploy.ps1
 #   F4CP_SERVER_PATH   — absolute path to the storage directory on the server,
 #                         e.g. /opt/f4cp-update-server/storage
 
