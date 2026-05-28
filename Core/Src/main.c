@@ -29,6 +29,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "bsp_power.h"
+#include "power_ctrl.h"
+#include "user_tvlcom_transport.h"
 
 /* USER CODE END Includes */
 
@@ -105,6 +108,9 @@ int main(void)
   MX_ADC3_Init();
   MX_USB_Device_Init();
   /* USER CODE BEGIN 2 */
+  BSP_Power_Init();
+  PowerCtrl_Init();
+  UserTvlComTransport_Init();
 
   /* USER CODE END 2 */
 
