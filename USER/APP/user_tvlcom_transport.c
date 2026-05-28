@@ -9,11 +9,11 @@
 #include "usbd_cdc_if.h"
 #include "user_tvlcom_protocol.h"
 
-static user_tvlcom_context_t g_user_tvlcom_contexts[USER_TVLCOM_TRANSPORT_COUNT];
+static USER_tvlcomContext_t s_USER_tvlcomContexts[USER_TVLCOM_TRANSPORT_COUNT];
 
-static int user_tvlcom_transport_send(const uint8_t *data, uint16_t len, void *user)
+static int s_USER_tvlcomTransportSend(const uint8_t *data, uint16_t len, void *user)
 {
-    user_tvlcom_transport_t transport = (user_tvlcom_transport_t)(uintptr_t)user;
+    USER_tvlcomTransport_t transport = (USER_tvlcomTransport_t)(uintptr_t)user;
 
     if ((data == NULL) || (len == 0U))
     {
@@ -36,35 +36,35 @@ static int user_tvlcom_transport_send(const uint8_t *data, uint16_t len, void *u
     }
 }
 
-void UserTvlComTransport_Init(void)
+void USER_tvlcomTransportInit(void)
 {
     uint32_t i;
 
     for (i = 0U; i < (uint32_t)USER_TVLCOM_TRANSPORT_COUNT; ++i)
     {
-        UserTvlCom_Init(&g_user_tvlcom_contexts[i], user_tvlcom_transport_send, (void *)(uintptr_t)i);
+        USER_tvlcomInit(&s_USER_tvlcomContexts[i], s_USER_tvlcomTransportSend, (void *)(uintptr_t)1);  // UCBCDC 通信
     }
 }
 
-void UserTvlComTransport_OnRx(user_tvlcom_transport_t transport, const uint8_t *data, uint16_t len)
+void USER_tvlcomTransportOnRx(USER_tvlcomTransport_t transport, const uint8_t *data, uint16_t len)
 {
     if ((transport >= USER_TVLCOM_TRANSPORT_COUNT) || (data == NULL) || (len == 0U))
     {
         return;
     }
 
-    UserTvlCom_Feed(&g_user_tvlcom_contexts[transport], data, len);
+    USER_tvlcomFeed(&s_USER_tvlcomContexts[transport], data, len);
 }
 
-void UserTvlComTransport_OnUsbCdcRx(const uint8_t *data, uint16_t len)
+void USER_tvlcomTransportOnUsbCdcRx(const uint8_t *data, uint16_t len)
 {
-    UserTvlComTransport_OnRx(USER_TVLCOM_TRANSPORT_USB_CDC, data, len);
+    USER_tvlcomTransportOnRx(USER_TVLCOM_TRANSPORT_USB_CDC, data, len);
 }
 
-void UserTvlComTransport_OnUartRx(user_tvlcom_transport_t transport, const uint8_t *data, uint16_t len)
+void USER_tvlcomTransportOnUartRx(USER_tvlcomTransport_t transport, const uint8_t *data, uint16_t len)
 {
     if ((transport == USER_TVLCOM_TRANSPORT_USART1) || (transport == USER_TVLCOM_TRANSPORT_USART2))
     {
-        UserTvlComTransport_OnRx(transport, data, len);
+        USER_tvlcomTransportOnRx(transport, data, len);
     }
 }

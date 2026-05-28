@@ -70,7 +70,7 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
-  pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT24_TIMERA_PERIOD;
+  pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT24_TIMERA_CMP4;
   if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_2, &pADCTriggerCfg) != HAL_OK)
   {
     Error_Handler();
@@ -135,6 +135,14 @@ void MX_HRTIM1_Init(void)
   }
   pCompareCfg.CompareValue = 6800;
   if (HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, &pCompareCfg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  pCompareCfg.CompareValue = 22500;
+  pCompareCfg.AutoDelayedMode = HRTIM_AUTODELAYEDMODE_AUTODELAYED_NOTIMEOUT;
+  pCompareCfg.AutoDelayedTimeout = 0x0000;
+
+  if (HAL_HRTIM_WaveformCompareConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_4, &pCompareCfg) != HAL_OK)
   {
     Error_Handler();
   }

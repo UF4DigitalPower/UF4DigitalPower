@@ -34,6 +34,70 @@
 4. 电压外环按较低频率执行，更新电流给定。
 5. `APP` 异步处理通信和参数管理。
 
+### 代码命名规范
+
+用户代码遵循统一的模块前缀命名。CubeMX/HAL 生成的 `MX_*`、`HAL_*`、`CDC_*`、IRQ handler 等接口保持原样，不做重命名；只在 `USER CODE` 区调用用户层接口。
+
+公开函数采用：
+
+```c
+MODULE_getAppObjectUnit();
+MODULE_setAppObjectUnit();
+MODULE_initAppObject();
+MODULE_runAppObject();
+MODULE_feedAppObject();
+```
+
+示例：
+
+```c
+BSP_getAppVinVoltage();
+BSP_setAppInjectedRaw();
+POWER_getAppSnapshot();
+POWER_setAppEnabled();
+USER_tvlcomFeed();
+USER_tvlcomTransportOnUsbCdcRx();
+```
+
+静态函数采用 `s_MODULE_` 前缀，避免使用 C 标准保留的前导下划线命名：
+
+```c
+static float s_BSP_getAppAdcRawVoltage(...);
+static int s_USER_tvlcomAppendTlv(...);
+static uint32_t s_POWER_getAppU32Nonnegative(...);
+```
+
+宏定义使用全大写，并带模块前缀和单位：
+
+```c
+#define BSP_POWER_ADC1_REGULAR_COUNT  2U
+#define POWER_CTRL_STATE_FLAG_RUN     0x08U
+#define USER_TVLCOM_MAX_PAYLOAD_SIZE  384U
+```
+
+类型名使用 `MODULE_object_t`，枚举值和宏一样使用全大写模块前缀：
+
+```c
+typedef struct
+{
+    uint32_t input_voltage_mv;
+} POWER_ctrlSnapshot_t;
+
+typedef enum
+{
+    POWER_CTRL_STAGE_BUCK = 1U,
+} POWER_ctrlStage_t;
+```
+
+全局变量必须尽量少，使用 `g_MODULE_object`；静态文件变量使用 `s_MODULE_object`：
+
+```c
+extern volatile BSP_adcResult_t g_BSP_adcResult;
+static POWER_ctrlSettings_t s_POWER_ctrlSettings;
+```
+
+变量、结构体字段使用小写蛇形，并在名称中保留单位：`vin_mv`、`iout_ma`、`duty_tick`、`temperature_mc`。协议契约中的 `CMD`、`TLV`、`CRC` 等缩写在宏和枚举中保持全大写。
+
 ### 运行状态机
 
 建议主状态机至少包含以下状态：
@@ -215,8 +279,8 @@ typedef struct
 {
     uint32_t fault_flags;
     uint8_t enabled;
-    power_state_t state;
-    power_mode_t mode;
+    POWER_state_t state;
+    POWER_mode_t mode;
     float vin_v;
     float vout_v;
     float iin_a;
@@ -224,64 +288,64 @@ typedef struct
     float iref_a;
     float vref_v;
     float duty_main;
-} power_ctrl_t;
+} POWER_ctrl_t;
 ```
 
 ```c
-void PowerCtrl_FastLoop(power_ctrl_t *ctrl)
+void POWER_runAppFastLoop(POWER_ctrl_t *ctrl)
 {
-    PowerCtrl_UpdateMeasurements(ctrl);
-    PowerCtrl_CheckFaults(ctrl);
+    POWER_updateAppMeasurements(ctrl);
+    POWER_checkAppFaults(ctrl);
 
     if (ctrl->fault_flags != 0u)
     {
-        PowerCtrl_EnterFault(ctrl);
+        POWER_enterAppFault(ctrl);
         return;
     }
 
     switch (ctrl->state)
     {
         case POWER_STATE_IDLE:
-            PowerCtrl_HandleIdle(ctrl);
+            POWER_handleAppIdle(ctrl);
             break;
 
         case POWER_STATE_PRECHARGE:
-            PowerCtrl_HandlePrecharge(ctrl);
+            POWER_handleAppPrecharge(ctrl);
             break;
 
         case POWER_STATE_SOFTSTART:
-            PowerCtrl_HandleSoftstart(ctrl);
+            POWER_handleAppSoftstart(ctrl);
             break;
 
         case POWER_STATE_RUN:
-            PowerCtrl_UpdateMode(ctrl);
-            PowerCtrl_RunCurrentLoop(ctrl);
+            POWER_updateAppMode(ctrl);
+            POWER_runAppCurrentLoop(ctrl);
             break;
 
         case POWER_STATE_FAULT:
         default:
-            PowerCtrl_ShutdownPwm(ctrl);
+            POWER_shutdownAppPwm(ctrl);
             break;
     }
 }
 ```
 
 ```c
-void PowerCtrl_SlowLoop(power_ctrl_t *ctrl)
+void POWER_runAppSlowLoop(POWER_ctrl_t *ctrl)
 {
     if (ctrl->state != POWER_STATE_RUN)
     {
         return;
     }
 
-    ctrl->iref_a = VoltagePid_Run(ctrl->vref_v, ctrl->vout_v);
+    ctrl->iref_a = POWER_runAppVoltagePid(ctrl->vref_v, ctrl->vout_v);
 }
 ```
 
 ### 当前项目下的落地建议
 
 - `BSP`
-  - 统一维护 `ADC_RESULT_t` 和物理量换算。
+  - 统一维护 `BSP_adcResult_t` 和物理量换算。
   - 提供 `Buck` 和 `Boost` 下内环电流选择接口。
 - `CTRL`
   - 先完成状态机和模式切换，不急着一开始就把 PID 调到最优。

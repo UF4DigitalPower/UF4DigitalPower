@@ -20,13 +20,13 @@ typedef enum
     POWER_CTRL_STAGE_BUCK = 1U,
     POWER_CTRL_STAGE_BOOST = 2U,
     POWER_CTRL_STAGE_MIX = 3U,
-} power_ctrl_stage_t;
+} POWER_ctrlStage_t;
 
 typedef enum
 {
     POWER_CTRL_CVCC_CC = 0U,
     POWER_CTRL_CVCC_CV = 1U,
-} power_ctrl_cvcc_mode_t;
+} POWER_ctrlCvccMode_t;
 
 enum
 {
@@ -45,7 +45,7 @@ typedef struct
     uint32_t ovp_set_mv;
     uint32_t ocp_set_ma;
     uint32_t fan_set_permille;
-} power_ctrl_settings_t;
+} POWER_ctrlSettings_t;
 
 typedef struct
 {
@@ -61,7 +61,7 @@ typedef struct
     uint16_t output_voltage_raw;
     uint16_t output_current_raw;
 
-    power_ctrl_settings_t settings;
+    POWER_ctrlSettings_t settings;
     uint8_t power_enabled;
     uint32_t fault_flags;
     uint8_t state_flag_bits;
@@ -79,12 +79,12 @@ typedef struct
     uint32_t loop_current_feedback_ma;
     uint32_t loop_current_reference_ma;
     uint32_t voltage_loop_reference_mv;
-} power_ctrl_snapshot_t;
+} POWER_ctrlSnapshot_t;
 
-void PowerCtrl_Init(void);
-void PowerCtrl_GetSnapshot(power_ctrl_snapshot_t *snapshot);
-void PowerCtrl_ApplySettings(const power_ctrl_settings_t *settings);
-void PowerCtrl_SetEnabled(uint8_t enabled);
+void POWER_initAppCtrl(void);
+void POWER_getAppSnapshot(POWER_ctrlSnapshot_t *snapshot);
+void POWER_applyAppSettings(const POWER_ctrlSettings_t *settings);
+void POWER_setAppEnabled(uint8_t enabled);
 
 #ifdef __cplusplus
 }

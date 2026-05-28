@@ -18,12 +18,12 @@ typedef enum
     USER_TVLCOM_TRANSPORT_USART1 = 1U,
     USER_TVLCOM_TRANSPORT_USART2 = 2U,
     USER_TVLCOM_TRANSPORT_COUNT,
-} user_tvlcom_transport_t;
+} USER_tvlcomTransport_t;
 
-void UserTvlComTransport_Init(void);
-void UserTvlComTransport_OnRx(user_tvlcom_transport_t transport, const uint8_t *data, uint16_t len);
-void UserTvlComTransport_OnUsbCdcRx(const uint8_t *data, uint16_t len);
-void UserTvlComTransport_OnUartRx(user_tvlcom_transport_t transport, const uint8_t *data, uint16_t len);
+void USER_tvlcomTransportInit(void);
+void USER_tvlcomTransportOnRx(USER_tvlcomTransport_t transport, const uint8_t *data, uint16_t len);
+void USER_tvlcomTransportOnUsbCdcRx(const uint8_t *data, uint16_t len);
+void USER_tvlcomTransportOnUartRx(USER_tvlcomTransport_t transport, const uint8_t *data, uint16_t len);
 
 #ifdef __cplusplus
 }

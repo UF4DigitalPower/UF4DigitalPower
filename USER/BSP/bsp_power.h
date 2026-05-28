@@ -12,8 +12,8 @@ extern "C" {
 
 #include <stdint.h>
 
-#ifndef CCMRAM
-#define CCMRAM __attribute__((section("ccmram")))
+#ifndef BSP_DMA_RAM
+#define BSP_DMA_RAM
 #endif
 
 /* ADC topology ------------------------------------------------------------- */
@@ -25,20 +25,20 @@ typedef enum
 {
     BSP_POWER_ADC1_REGULAR_IIN = 0U,
     BSP_POWER_ADC1_REGULAR_IOUT,
-} BSP_POWER_ADC1_REGULAR_INDEX_t;
+} BSP_powerAdc1RegularIndex_t;
 
 typedef enum
 {
     BSP_POWER_ADC1_INJECTED_VOUT = 0U,
     BSP_POWER_ADC1_INJECTED_VIN,
-} BSP_POWER_ADC1_INJECTED_INDEX_t;
+} BSP_powerAdc1InjectedIndex_t;
 
 typedef enum
 {
     BSP_POWER_STAGE_MODE_BUCK = 0U,
     BSP_POWER_STAGE_MODE_BOOST,
     BSP_POWER_STAGE_MODE_MIXED,
-} BSP_POWER_STAGE_MODE_t;
+} BSP_powerStageMode_t;
 
 typedef struct
 {
@@ -49,7 +49,7 @@ typedef struct
     uint16_t temp1_raw;
     uint16_t temp2_raw;
     uint16_t die_temp_raw;
-} ADC_RESULT_t;
+} BSP_adcResult_t;
 
 typedef struct
 {
@@ -60,7 +60,7 @@ typedef struct
     float temp1_v;
     float temp2_v;
     float die_temp_c;
-} POWER_MEASUREMENT_t;
+} BSP_powerMeasurement_t;
 
 /* ADC scaling -------------------------------------------------------------- */
 
@@ -74,12 +74,12 @@ typedef struct
 #define BSP_POWER_ADC_VREF_V                 3.2806F
 #define BSP_POWER_TS_CAL_VREF_V              3.0F
 
-#define TS_CAL1_ADDR                         0x1FFF75A8UL
-#define TS_CAL2_ADDR                         0x1FFF75CAUL
-#define TS_CAL1                             (*(volatile uint16_t *)TS_CAL1_ADDR)
-#define TS_CAL2                             (*(volatile uint16_t *)TS_CAL2_ADDR)
-#define TS_CAL1_TEMP                         30.0F
-#define TS_CAL2_TEMP                         130.0F
+#define BSP_POWER_TS_CAL1_ADDR               0x1FFF75A8UL
+#define BSP_POWER_TS_CAL2_ADDR               0x1FFF75CAUL
+#define BSP_POWER_TS_CAL1_RAW               (*(volatile uint16_t *)BSP_POWER_TS_CAL1_ADDR)
+#define BSP_POWER_TS_CAL2_RAW               (*(volatile uint16_t *)BSP_POWER_TS_CAL2_ADDR)
+#define BSP_POWER_TS_CAL1_TEMP_C             30.0F
+#define BSP_POWER_TS_CAL2_TEMP_C             130.0F
 
 /*
  * Per this board's voltage front-end topology, the effective restore scale is
@@ -112,45 +112,41 @@ typedef struct
 #define BSP_POWER_IIN_SCALE                  1.0F
 #define BSP_POWER_IOUT_SCALE                 1.0F
 
-/* Compatibility aliases with the previous placeholder header. */
-#define ADC_MAX_VALUE                        BSP_POWER_ADC1_FULL_SCALE_RAW
-#define REF_3V3                              BSP_POWER_ADC_VREF_V
-
 /* PWM duty limits ---------------------------------------------------------- */
 
-#define MIN_BUCK_DUTY                        136U
-#define MAX_BUCK_DUTY                        25840U
-#define MAX_BUCK_DUTY1                       21760U
-#define MIN_BOOST_DUTY                       136U
-#define MIN_BOOST_DUTY1                      1800U
-#define MAX_BOOST_DUTY                       17680U
-#define MAX_BOOST_DUTY1                      25840U
+#define BSP_POWER_BUCK_DUTY_MIN_TICK         136U
+#define BSP_POWER_BUCK_DUTY_MAX_TICK         25840U
+#define BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK    21760U
+#define BSP_POWER_BOOST_DUTY_MIN_TICK        136U
+#define BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK   1800U
+#define BSP_POWER_BOOST_DUTY_MAX_TICK        17680U
+#define BSP_POWER_BOOST_DUTY_SYNC_MAX_TICK   25840U
 
 /* Shared ADC buffers ------------------------------------------------------- */
 
-extern CCMRAM volatile uint16_t g_power_adc1_regular_dma[BSP_POWER_ADC1_REGULAR_COUNT];
-extern volatile ADC_RESULT_t g_power_adc_result;
+extern BSP_DMA_RAM volatile uint16_t g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_COUNT];
+extern volatile BSP_adcResult_t g_BSP_adcResult;
 
 /* Board helpers ------------------------------------------------------------ */
 
-void BSP_Power_Init(void);
-void BSP_Power_RefreshAdcResultFromBuffers(void);
-void BSP_Power_SetInjectedRaw(uint16_t vout_raw, uint16_t vin_raw);
-void BSP_Power_SetAuxTemperatureRaw(uint16_t temp1_raw, uint16_t temp2_raw, uint16_t die_temp_raw);
-void BSP_Power_GetAdcResult(ADC_RESULT_t *result);
-void BSP_Power_ConvertToMeasurement(const ADC_RESULT_t *adc_result, POWER_MEASUREMENT_t *measurement);
+void BSP_initAppPower(void);
+void BSP_updateAppAdcResultFromBuffers(void);
+void BSP_setAppInjectedRaw(uint16_t vout_raw, uint16_t vin_raw);
+void BSP_setAppAuxTemperatureRaw(uint16_t temp1_raw, uint16_t temp2_raw, uint16_t die_temp_raw);
+void BSP_getAppAdcResult(BSP_adcResult_t *result);
+void BSP_getAppMeasurement(const BSP_adcResult_t *adc_result, BSP_powerMeasurement_t *measurement);
 
-float BSP_Power_Adc1RawToVoltage(uint16_t raw);
-float BSP_Power_Adc2RawToVoltage(uint16_t raw);
-float BSP_Power_Adc3RawToVoltage(uint16_t raw);
-float BSP_Power_Adc5RawToVoltage(uint16_t raw);
+float BSP_getAppAdc1Voltage(uint16_t raw);
+float BSP_getAppAdc2Voltage(uint16_t raw);
+float BSP_getAppAdc3Voltage(uint16_t raw);
+float BSP_getAppAdc5Voltage(uint16_t raw);
 
-float BSP_Power_GetVinVoltage(uint16_t raw);
-float BSP_Power_GetVoutVoltage(uint16_t raw);
-float BSP_Power_GetIinCurrent(uint16_t raw);
-float BSP_Power_GetIoutCurrent(uint16_t raw);
-float BSP_Power_GetDieTemperature(uint16_t raw);
-float BSP_Power_GetInnerCurrentA(const POWER_MEASUREMENT_t *measurement, BSP_POWER_STAGE_MODE_t mode);
+float BSP_getAppVinVoltage(uint16_t raw);
+float BSP_getAppVoutVoltage(uint16_t raw);
+float BSP_getAppIinCurrent(uint16_t raw);
+float BSP_getAppIoutCurrent(uint16_t raw);
+float BSP_getAppDieTemperature(uint16_t raw);
+float BSP_getAppInnerCurrentA(const BSP_powerMeasurement_t *measurement, BSP_powerStageMode_t mode);
 
 #ifdef __cplusplus
 }

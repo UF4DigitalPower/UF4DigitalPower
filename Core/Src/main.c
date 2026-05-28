@@ -108,9 +108,35 @@ int main(void)
   MX_ADC3_Init();
   MX_USB_Device_Init();
   /* USER CODE BEGIN 2 */
-  BSP_Power_Init();
-  PowerCtrl_Init();
-  UserTvlComTransport_Init();
+  BSP_initAppPower();
+  POWER_initAppCtrl();
+  USER_tvlcomTransportInit();
+
+  if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_ADC_Start_DMA(&hadc1,
+                        (uint32_t *)g_BSP_adc1RegularDma,
+                        BSP_POWER_ADC1_REGULAR_COUNT) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (hadc1.DMA_Handle != NULL)
+  {
+    __HAL_DMA_DISABLE_IT(hadc1.DMA_Handle, DMA_IT_HT | DMA_IT_TC);
+  }
+
+  if (HAL_ADCEx_InjectedStart_IT(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_A) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
   /* USER CODE END 2 */
 

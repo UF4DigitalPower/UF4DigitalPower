@@ -21,6 +21,7 @@
 #include "adc.h"
 
 /* USER CODE BEGIN 0 */
+#include "bsp_power.h"
 
 /* USER CODE END 0 */
 
@@ -63,11 +64,7 @@ void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
-  hadc1.Init.OversamplingMode = ENABLE;
-  hadc1.Init.Oversampling.Ratio = ADC_OVERSAMPLING_RATIO_4;
-  hadc1.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_1;
-  hadc1.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
-  hadc1.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_RESUMED_MODE;
+  hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -105,7 +102,7 @@ void MX_ADC1_Init(void)
 
   /** Configure Injected Channel
   */
-  sConfigInjected.InjectedChannel = ADC_CHANNEL_3;
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
   sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
   sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_6CYCLES_5;
   sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
@@ -117,9 +114,7 @@ void MX_ADC1_Init(void)
   sConfigInjected.QueueInjectedContext = DISABLE;
   sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJEC_HRTIM_TRG2;
   sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
-  sConfigInjected.InjecOversamplingMode = ENABLE;
-  sConfigInjected.InjecOversampling.Ratio = ADC_OVERSAMPLING_RATIO_4;
-  sConfigInjected.InjecOversampling.RightBitShift = ADC_RIGHTBITSHIFT_1;
+  sConfigInjected.InjecOversamplingMode = DISABLE;
   if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
   {
     Error_Handler();
@@ -127,7 +122,7 @@ void MX_ADC1_Init(void)
 
   /** Configure Injected Channel
   */
-  sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
+  sConfigInjected.InjectedChannel = ADC_CHANNEL_3;
   sConfigInjected.InjectedRank = ADC_INJECTED_RANK_2;
   if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
   {
@@ -589,5 +584,15 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 }
 
 /* USER CODE BEGIN 1 */
+void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+  if ((hadc != NULL) && (hadc->Instance == ADC1))
+  {
+    uint32_t vin_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
+    uint32_t vout_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2);
+
+    BSP_setAppInjectedRaw((uint16_t)vout_raw, (uint16_t)vin_raw);
+  }
+}
 
 /* USER CODE END 1 */

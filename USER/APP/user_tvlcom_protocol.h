@@ -10,7 +10,6 @@
 extern "C" {
 #endif
 
-#include <stddef.h>
 #include <stdint.h>
 
 #define USER_TVLCOM_SOF0 0xAAU
@@ -25,14 +24,14 @@ typedef enum
     USER_TVLCOM_CMD_WRITE = 0x02U,
     USER_TVLCOM_CMD_REPORT = 0x03U,
     USER_TVLCOM_CMD_NACK = 0xFFU,
-} user_tvlcom_cmd_t;
+} USER_tvlcomCmd_t;
 
 typedef enum
 {
     USER_TVLCOM_ACCESS_READ = 0x01U,
     USER_TVLCOM_ACCESS_WRITE = 0x02U,
     USER_TVLCOM_ACCESS_READ_WRITE = 0x03U,
-} user_tvlcom_access_t;
+} USER_tvlcomAccess_t;
 
 typedef enum
 {
@@ -68,15 +67,15 @@ typedef enum
     USER_TVLCOM_DATA_LOOP_CURRENT_FEEDBACK = 41U,
     USER_TVLCOM_DATA_LOOP_CURRENT_REFERENCE = 42U,
     USER_TVLCOM_DATA_VOLTAGE_LOOP_CURRENT_REFERENCE = 43U,
-} user_tvlcom_data_type_t;
+} USER_tvlcomDataType_t;
 
 typedef enum
 {
     USER_TVLCOM_STATUS_OK = 0,
     USER_TVLCOM_STATUS_ERROR = -1,
-} user_tvlcom_status_t;
+} USER_tvlcomStatus_t;
 
-typedef int (*user_tvlcom_send_fn_t)(const uint8_t *data, uint16_t len, void *user);
+typedef int (*USER_tvlcomSendFn_t)(const uint8_t *data, uint16_t len, void *user);
 
 typedef struct
 {
@@ -84,14 +83,14 @@ typedef struct
     uint16_t rx_len;
     uint16_t expected_len;
     uint8_t sof_state;
-    user_tvlcom_send_fn_t send;
+    USER_tvlcomSendFn_t send;
     void *send_user;
-} user_tvlcom_context_t;
+} USER_tvlcomContext_t;
 
-void UserTvlCom_Init(user_tvlcom_context_t *ctx, user_tvlcom_send_fn_t send, void *send_user);
-void UserTvlCom_Feed(user_tvlcom_context_t *ctx, const uint8_t *data, uint16_t len);
-uint16_t UserTvlCom_Crc16Modbus(const uint8_t *data, uint16_t len);
-uint16_t UserTvlCom_BuildFrame(uint8_t cmd, uint8_t seq, const uint8_t *payload, uint16_t payload_len, uint8_t *out, uint16_t out_cap);
+void USER_tvlcomInit(USER_tvlcomContext_t *ctx, USER_tvlcomSendFn_t send, void *send_user);
+void USER_tvlcomFeed(USER_tvlcomContext_t *ctx, const uint8_t *data, uint16_t len);
+uint16_t USER_tvlcomCrc16Modbus(const uint8_t *data, uint16_t len);
+uint16_t USER_tvlcomBuildFrame(uint8_t cmd, uint8_t seq, const uint8_t *payload, uint16_t payload_len, uint8_t *out, uint16_t out_cap);
 
 #ifdef __cplusplus
 }
