@@ -1,0 +1,37 @@
+{
+  "project": "F4CP",
+  "kind": "Power",
+  "version": "v0.0.2",
+  "device": "STM32G474CBT6",
+  "hardware": "F4CP-G474-Power",
+  "channel": "beta",
+  "date": "2026-05-30",
+  "min_client": "0.4.0",
+  "files": {
+    "bin": {
+      "name": "F4CP-Power-v0.0.2.bin",
+      "download_url": "/api/v1/firmware/power/versions/v0.0.2/download?type=bin",
+      "sha256": "0433aec4253c0cda7d43ef3b68f51e62281ab6867fa5abec72f5bf6e0d9a4d67",
+      "size": 48956
+    },
+    "hex": {
+      "name": "F4CP-Power-v0.0.2.hex",
+      "download_url": "/api/v1/firmware/power/versions/v0.0.2/download?type=hex",
+      "sha256": "6310ec631952e25e57c559257e4e41b09bb2152a0b59e2e52dc45fada1ce4315",
+      "size": 137782
+    }
+  },
+  "burn": {
+    "method": "pyocd",
+    "target": "stm32g474cbtx",
+    "reset_after_download": true
+  },
+  "changelog_url": "/api/v1/firmware/power/versions/v0.0.2/changelog",
+  "notes": [
+    "本地发布 v0.0.2",
+    "发布说明：完善骨架代码，完善触发逻辑，绑定虚拟串口",
+    "适用设备：F4CP-POWER",
+    "更新内容：通过W25Q64 SPI闪存驱动添加持久设置存储，将闪存存档/加载集成到电源控制和协议中，并更新ADC校准和控制算法",
+    "发布日期：2026-05-30"
+  ]
+}

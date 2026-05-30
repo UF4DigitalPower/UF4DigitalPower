@@ -1,7 +1,7 @@
 {
   "project": "F4CP",
   "kind": "Power",
-  "latest": "v0.0.1",
-  "manifest_url": "/api/v1/firmware/power/versions/v0.0.1",
-  "changelog_url": "/api/v1/firmware/power/versions/v0.0.1/changelog"
+  "latest": "v0.0.2",
+  "manifest_url": "/api/v1/firmware/power/versions/v0.0.2",
+  "changelog_url": "/api/v1/firmware/power/versions/v0.0.2/changelog"
 }
