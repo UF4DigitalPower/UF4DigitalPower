@@ -66,6 +66,10 @@ void POWER_setAppEnabled(uint8_t enabled)
     s_USER_snapshot.power_enabled = enabled;
 }
 
+void USER_flashStoreRequestAppSave(void)
+{
+}
+
 static int s_USER_mockSend(const uint8_t *data, uint16_t len, void *user)
 {
     (void)user;

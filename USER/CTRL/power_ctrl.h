@@ -30,6 +30,18 @@ typedef enum
 
 enum
 {
+    POWER_CTRL_FAULT_NONE = 0x0000U,
+    POWER_CTRL_FAULT_VIN_UVP = 0x0001U,
+    POWER_CTRL_FAULT_VIN_OVP = 0x0002U,
+    POWER_CTRL_FAULT_VOUT_UVP = 0x0004U,
+    POWER_CTRL_FAULT_VOUT_OVP = 0x0008U,
+    POWER_CTRL_FAULT_IOUT_OCP = 0x0010U,
+    POWER_CTRL_FAULT_SHORT = 0x0020U,
+    POWER_CTRL_FAULT_OTP = 0x0040U,
+};
+
+enum
+{
     POWER_CTRL_STATE_FLAG_INIT = 0x01U,
     POWER_CTRL_STATE_FLAG_WAIT = 0x02U,
     POWER_CTRL_STATE_FLAG_RISE = 0x04U,
@@ -85,6 +97,7 @@ void POWER_initAppCtrl(void);
 void POWER_getAppSnapshot(POWER_ctrlSnapshot_t *snapshot);
 void POWER_applyAppSettings(const POWER_ctrlSettings_t *settings);
 void POWER_setAppEnabled(uint8_t enabled);
+void POWER_runAppControlTick(void);
 
 #ifdef __cplusplus
 }

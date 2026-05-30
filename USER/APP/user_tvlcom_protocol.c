@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "power_ctrl.h"
+#include "user_flash_store.h"
 
 #define USER_TVLCOM_HEADER_SIZE 4U
 #define USER_TVLCOM_CRC_SIZE 2U
@@ -452,6 +453,7 @@ static int s_USER_tvlcomApplyWritePayload(const uint8_t *payload, uint16_t paylo
     if (stage.has_settings != 0U)
     {
         POWER_applyAppSettings(&stage.settings);
+        USER_flashStoreRequestAppSave();
     }
 
     if (stage.has_enabled != 0U)

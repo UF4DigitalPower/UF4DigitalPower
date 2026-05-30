@@ -31,6 +31,7 @@
 /* USER CODE BEGIN Includes */
 #include "bsp_power.h"
 #include "power_ctrl.h"
+#include "user_flash_store.h"
 #include "user_tvlcom_transport.h"
 
 /* USER CODE END Includes */
@@ -110,6 +111,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   BSP_initAppPower();
   POWER_initAppCtrl();
+  USER_flashStoreInitApp();
   USER_tvlcomTransportInit();
 
   if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
@@ -133,7 +135,7 @@ int main(void)
     Error_Handler();
   }
 
-  if (HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_A) != HAL_OK)
+  if (HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_A | HRTIM_TIMERID_TIMER_D) != HAL_OK)
   {
     Error_Handler();
   }
@@ -147,6 +149,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    USER_flashStoreRunAppTask();
   }
   /* USER CODE END 3 */
 }

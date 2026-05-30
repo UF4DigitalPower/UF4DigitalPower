@@ -22,6 +22,7 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "power_ctrl.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -255,6 +256,7 @@ void HRTIM1_TIMA_IRQHandler(void)
   /* USER CODE END HRTIM1_TIMA_IRQn 0 */
   HAL_HRTIM_IRQHandler(&hhrtim1,HRTIM_TIMERINDEX_TIMER_A);
   /* USER CODE BEGIN HRTIM1_TIMA_IRQn 1 */
+  POWER_runAppControlTick();
 
   /* USER CODE END HRTIM1_TIMA_IRQn 1 */
 }

@@ -20,10 +20,28 @@ static float s_BSP_getAppAdcRawVoltage(uint16_t raw, float raw_full_scale)
     return ((float)raw * BSP_POWER_ADC_VREF_V) / raw_full_scale;
 }
 
-static float s_BSP_getAppCurrentFromRaw(uint16_t raw, float polarity)
+static uint16_t s_BSP_getAppCalibratedRaw(uint16_t raw, uint32_t k, uint32_t b)
+{
+    uint32_t calibrated = (((uint32_t)raw * k) >> 12) + b;
+
+    if (calibrated > 0xFFFFU)
+    {
+        calibrated = 0xFFFFU;
+    }
+
+    return (uint16_t)calibrated;
+}
+
+static float s_BSP_getAppCurrentFromRaw(uint16_t raw, float scale)
 {
     const float sense_voltage = BSP_getAppAdc1Voltage(raw);
-    return ((sense_voltage - BSP_POWER_CURRENT_BIAS_V) / BSP_POWER_CURRENT_SENSE_V_PER_A) * polarity;
+
+    if (sense_voltage >= BSP_POWER_CURRENT_BIAS_V)
+    {
+        return 0.0F;
+    }
+
+    return ((BSP_POWER_CURRENT_BIAS_V - sense_voltage) / BSP_POWER_CURRENT_SENSE_V_PER_A) * scale;
 }
 
 void BSP_initAppPower(void)
@@ -35,12 +53,16 @@ void BSP_initAppPower(void)
 void BSP_updateAppAdcResultFromBuffers(void)
 {
     g_BSP_adcResult.iin_raw = g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_IIN];
-    g_BSP_adcResult.iout_raw = g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_IOUT];
+    g_BSP_adcResult.iout_raw = s_BSP_getAppCalibratedRaw(g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_IOUT],
+                                                         BSP_POWER_IOUT_RAW_CAL_K,
+                                                         BSP_POWER_IOUT_RAW_CAL_B);
 }
 
 void BSP_setAppInjectedRaw(uint16_t vout_raw, uint16_t vin_raw)
 {
-    g_BSP_adcResult.vout_raw = vout_raw;
+    g_BSP_adcResult.vout_raw = s_BSP_getAppCalibratedRaw(vout_raw,
+                                                         BSP_POWER_VOUT_RAW_CAL_K,
+                                                         BSP_POWER_VOUT_RAW_CAL_B);
     g_BSP_adcResult.vin_raw = vin_raw;
 }
 

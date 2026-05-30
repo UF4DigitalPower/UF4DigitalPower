@@ -65,7 +65,7 @@ typedef struct
 /* ADC scaling -------------------------------------------------------------- */
 
 #define BSP_POWER_ADC_12BIT_MAX_RAW          4095.0F
-#define BSP_POWER_ADC1_FULL_SCALE_RAW        8190.0F
+#define BSP_POWER_ADC1_FULL_SCALE_RAW        BSP_POWER_ADC_12BIT_MAX_RAW
 #define BSP_POWER_ADC2_FULL_SCALE_RAW        65520.0F
 #define BSP_POWER_ADC3_FULL_SCALE_RAW        65520.0F
 #define BSP_POWER_ADC5_FULL_SCALE_RAW        32760.0F
@@ -82,31 +82,28 @@ typedef struct
 #define BSP_POWER_TS_CAL2_TEMP_C             130.0F
 
 /*
- * Per this board's voltage front-end topology, the effective restore scale is
- * defined directly by the two matching resistors:
+ * The example project restores VIN/VOUT with:
  *
  *   V_real = V_adc_pin * (R_upper / R_lower)
- *
- * Replace the resistor values below with the exact schematic values.
  */
 #define BSP_POWER_STAGE_MAX_VOLTAGE_V        50.0F
 #define BSP_POWER_DIVIDER_SCALE(r_upper, r_lower) ((r_upper) / (r_lower))
 
-#define BSP_POWER_VIN_R_UPPER_OHM            47000.0F
-#define BSP_POWER_VIN_R_LOWER_OHM            3300.0F
-#define BSP_POWER_VOUT_R_UPPER_OHM           47000.0F
-#define BSP_POWER_VOUT_R_LOWER_OHM           3300.0F
+#define BSP_POWER_VIN_R_UPPER_OHM            75000.0F
+#define BSP_POWER_VIN_R_LOWER_OHM            4700.0F
+#define BSP_POWER_VOUT_R_UPPER_OHM           75000.0F
+#define BSP_POWER_VOUT_R_LOWER_OHM           4700.0F
 
 #define BSP_POWER_VIN_SENSE_SCALE            BSP_POWER_DIVIDER_SCALE(BSP_POWER_VIN_R_UPPER_OHM, BSP_POWER_VIN_R_LOWER_OHM)
 #define BSP_POWER_VOUT_SENSE_SCALE           BSP_POWER_DIVIDER_SCALE(BSP_POWER_VOUT_R_UPPER_OHM, BSP_POWER_VOUT_R_LOWER_OHM)
 
 /*
- * Current sensing model from README:
- * 8 mOhm shunt, gain of 20, and 1.65 V mid-bias for bidirectional sensing.
- * If channel polarity is inverted on hardware, flip the corresponding scale sign.
+ * Current sensing uses a 1.65 V midpoint. Values above the midpoint are
+ * reverse current and are clipped to 0 A; 1.65 V down to 0 V is positive
+ * current. Keep board-specific shunt/gain/trim here.
  */
-#define BSP_POWER_CURRENT_SHUNT_OHM          0.008F
-#define BSP_POWER_CURRENT_AMP_GAIN           20.0F
+#define BSP_POWER_CURRENT_SHUNT_OHM          0.005F
+#define BSP_POWER_CURRENT_AMP_GAIN           62.0F
 #define BSP_POWER_CURRENT_BIAS_V             1.650F
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)
 #define BSP_POWER_IIN_SCALE                  1.0F
@@ -114,6 +111,7 @@ typedef struct
 
 /* PWM duty limits ---------------------------------------------------------- */
 
+#define BSP_POWER_HRTIM_PERIOD_TICK          27200U
 #define BSP_POWER_BUCK_DUTY_MIN_TICK         136U
 #define BSP_POWER_BUCK_DUTY_MAX_TICK         25840U
 #define BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK    21760U
@@ -121,6 +119,12 @@ typedef struct
 #define BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK   1800U
 #define BSP_POWER_BOOST_DUTY_MAX_TICK        17680U
 #define BSP_POWER_BOOST_DUTY_SYNC_MAX_TICK   25840U
+
+/* Example-project raw trims: y = raw * K / 4096 + B. */
+#define BSP_POWER_VOUT_RAW_CAL_K             4099U
+#define BSP_POWER_VOUT_RAW_CAL_B             1U
+#define BSP_POWER_IOUT_RAW_CAL_K             4095U
+#define BSP_POWER_IOUT_RAW_CAL_B             1U
 
 /* Shared ADC buffers ------------------------------------------------------- */
 
