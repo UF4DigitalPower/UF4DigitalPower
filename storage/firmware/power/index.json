@@ -4,17 +4,10 @@
   "versions": [
     {
       "version": "v0.0.1",
-      "date": "2026-05-28",
+      "date": "2026-05-29",
       "channel": "beta",
       "recommended": false,
       "manifest_url": "/api/v1/firmware/power/versions/v0.0.1"
-    },
-    {
-      "version": "v0.1.0",
-      "date": "2026-05-26",
-      "channel": "beta",
-      "recommended": false,
-      "manifest_url": "/api/v1/firmware/power/versions/v0.1.0"
     }
   ]
 }
