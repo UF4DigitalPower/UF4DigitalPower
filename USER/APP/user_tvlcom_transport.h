@@ -21,6 +21,7 @@ typedef enum
 } USER_tvlcomTransport_t;
 
 void USER_tvlcomTransportInit(void);
+void USER_tvlcomTransportRunTask(void);
 void USER_tvlcomTransportOnRx(USER_tvlcomTransport_t transport, const uint8_t *data, uint16_t len);
 void USER_tvlcomTransportOnUsbCdcRx(const uint8_t *data, uint16_t len);
 void USER_tvlcomTransportOnUartRx(USER_tvlcomTransport_t transport, const uint8_t *data, uint16_t len);

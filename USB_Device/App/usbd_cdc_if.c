@@ -22,6 +22,8 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+#include <string.h>
+
 #include "user_tvlcom_transport.h"
 
 /* USER CODE END INCLUDE */
@@ -288,10 +290,22 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 7 */
   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+  if ((Buf == NULL) || (Len == 0U) || (Len > APP_TX_DATA_SIZE))
+  {
+    return USBD_FAIL;
+  }
+  if (hcdc == NULL)
+  {
+    return USBD_BUSY;
+  }
   if (hcdc->TxState != 0){
     return USBD_BUSY;
   }
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
+  if (Buf != UserTxBufferFS)
+  {
+    memcpy(UserTxBufferFS, Buf, Len);
+  }
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, Len);
   result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
   /* USER CODE END 7 */
   return result;

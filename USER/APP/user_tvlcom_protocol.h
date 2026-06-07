@@ -16,6 +16,7 @@ extern "C" {
 #define USER_TVLCOM_SOF1 0x55U
 #define USER_TVLCOM_MAX_PAYLOAD_SIZE 384U
 #define USER_TVLCOM_MAX_FRAME_SIZE (2U + 2U + USER_TVLCOM_MAX_PAYLOAD_SIZE + 2U)
+#define USER_TVLCOM_STREAM_MAX_TYPES 8U
 
 typedef enum
 {
@@ -23,6 +24,8 @@ typedef enum
     USER_TVLCOM_CMD_READ = 0x01U,
     USER_TVLCOM_CMD_WRITE = 0x02U,
     USER_TVLCOM_CMD_REPORT = 0x03U,
+    USER_TVLCOM_CMD_STREAM_START = 0x04U,
+    USER_TVLCOM_CMD_STREAM_STOP = 0x05U,
     USER_TVLCOM_CMD_NACK = 0xFFU,
 } USER_tvlcomCmd_t;
 
@@ -41,6 +44,8 @@ typedef enum
     USER_TVLCOM_DATA_OUTPUT_CURRENT = 13U,
     USER_TVLCOM_DATA_CORE_TEMPERATURE = 14U,
     USER_TVLCOM_DATA_BOARD_TEMPERATURE = 15U,
+    USER_TVLCOM_DATA_TEMP1_TEMPERATURE = USER_TVLCOM_DATA_BOARD_TEMPERATURE,
+    USER_TVLCOM_DATA_TEMP2_TEMPERATURE = 16U,
     USER_TVLCOM_DATA_SET_VOLTAGE_LIMIT = 17U,
     USER_TVLCOM_DATA_SET_CURRENT_LIMIT = 18U,
     USER_TVLCOM_DATA_CC_CV_MODE = 20U,
@@ -85,9 +90,20 @@ typedef struct
     uint8_t sof_state;
     USER_tvlcomSendFn_t send;
     void *send_user;
+    uint8_t stream_enabled;
+    uint8_t stream_fast_count;
+    uint8_t stream_slow_count;
+    uint8_t stream_fast_samples_until_slow;
+    uint16_t stream_fast_period_ms;
+    uint16_t stream_slow_period_ms;
+    uint16_t stream_slow_every_fast_samples;
+    uint32_t stream_last_tick_ms;
+    uint8_t stream_fast_types[USER_TVLCOM_STREAM_MAX_TYPES];
+    uint8_t stream_slow_types[USER_TVLCOM_STREAM_MAX_TYPES];
 } USER_tvlcomContext_t;
 
 void USER_tvlcomInit(USER_tvlcomContext_t *ctx, USER_tvlcomSendFn_t send, void *send_user);
+void USER_tvlcomRunTask(USER_tvlcomContext_t *ctx);
 void USER_tvlcomFeed(USER_tvlcomContext_t *ctx, const uint8_t *data, uint16_t len);
 uint16_t USER_tvlcomCrc16Modbus(const uint8_t *data, uint16_t len);
 uint16_t USER_tvlcomBuildFrame(uint8_t cmd, uint8_t seq, const uint8_t *payload, uint16_t payload_len, uint8_t *out, uint16_t out_cap);

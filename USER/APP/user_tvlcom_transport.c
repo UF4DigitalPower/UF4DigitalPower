@@ -42,7 +42,19 @@ void USER_tvlcomTransportInit(void)
 
     for (i = 0U; i < (uint32_t)USER_TVLCOM_TRANSPORT_COUNT; ++i)
     {
-        USER_tvlcomInit(&s_USER_tvlcomContexts[i], s_USER_tvlcomTransportSend, (void *)(uintptr_t)1);  // UCBCDC 通信
+        USER_tvlcomInit(&s_USER_tvlcomContexts[i],
+                        s_USER_tvlcomTransportSend,
+                        (void *)(uintptr_t)i);
+    }
+}
+
+void USER_tvlcomTransportRunTask(void)
+{
+    uint32_t i;
+
+    for (i = 0U; i < (uint32_t)USER_TVLCOM_TRANSPORT_COUNT; ++i)
+    {
+        USER_tvlcomRunTask(&s_USER_tvlcomContexts[i]);
     }
 }
 

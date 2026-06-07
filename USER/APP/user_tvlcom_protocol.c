@@ -7,6 +7,7 @@
 
 #include <string.h>
 
+#include "main.h"
 #include "power_ctrl.h"
 #include "user_flash_store.h"
 
@@ -14,6 +15,8 @@
 #define USER_TVLCOM_CRC_SIZE 2U
 #define USER_TVLCOM_MIN_BODY_SIZE 2U
 #define USER_TVLCOM_TLV_HEADER_SIZE 3U
+#define USER_TVLCOM_STREAM_SEPARATOR0 0xFEU
+#define USER_TVLCOM_STREAM_SEPARATOR1 0xEDU
 
 typedef struct
 {
@@ -37,6 +40,8 @@ typedef struct
     uint8_t enabled;
 } USER_tvlcomWriteStage_t;
 
+static int s_USER_tvlcomParseNextTlv(const uint8_t *payload, uint16_t payload_len, uint16_t *offset, USER_tvlcomTlvView_t *tlv);
+
 static const USER_tvlcomDataDescriptor_t s_USER_tvlcomDataDescriptors[] = {
     {USER_TVLCOM_DATA_INPUT_VOLTAGE, 4U, USER_TVLCOM_ACCESS_READ},
     {USER_TVLCOM_DATA_INPUT_CURRENT, 4U, USER_TVLCOM_ACCESS_READ},
@@ -44,6 +49,7 @@ static const USER_tvlcomDataDescriptor_t s_USER_tvlcomDataDescriptors[] = {
     {USER_TVLCOM_DATA_OUTPUT_CURRENT, 4U, USER_TVLCOM_ACCESS_READ},
     {USER_TVLCOM_DATA_CORE_TEMPERATURE, 4U, USER_TVLCOM_ACCESS_READ},
     {USER_TVLCOM_DATA_BOARD_TEMPERATURE, 4U, USER_TVLCOM_ACCESS_READ},
+    {USER_TVLCOM_DATA_TEMP2_TEMPERATURE, 4U, USER_TVLCOM_ACCESS_READ},
     {USER_TVLCOM_DATA_SET_VOLTAGE_LIMIT, 4U, USER_TVLCOM_ACCESS_READ_WRITE},
     {USER_TVLCOM_DATA_SET_CURRENT_LIMIT, 4U, USER_TVLCOM_ACCESS_READ_WRITE},
     {USER_TVLCOM_DATA_CC_CV_MODE, 1U, USER_TVLCOM_ACCESS_READ},
@@ -79,6 +85,7 @@ static const uint8_t s_USER_tvlcomReportTypes[] = {
     USER_TVLCOM_DATA_OUTPUT_CURRENT,
     USER_TVLCOM_DATA_CORE_TEMPERATURE,
     USER_TVLCOM_DATA_BOARD_TEMPERATURE,
+    USER_TVLCOM_DATA_TEMP2_TEMPERATURE,
     USER_TVLCOM_DATA_SET_VOLTAGE_LIMIT,
     USER_TVLCOM_DATA_SET_CURRENT_LIMIT,
     USER_TVLCOM_DATA_CC_CV_MODE,
@@ -231,6 +238,8 @@ static int s_USER_tvlcomAppendSnapshotType(uint8_t type, const POWER_ctrlSnapsho
             return s_USER_tvlcomAppendI32(payload, payload_cap, offset, type, snapshot->core_temperature_mc);
         case USER_TVLCOM_DATA_BOARD_TEMPERATURE:
             return s_USER_tvlcomAppendI32(payload, payload_cap, offset, type, snapshot->board_temperature_mc);
+        case USER_TVLCOM_DATA_TEMP2_TEMPERATURE:
+            return s_USER_tvlcomAppendI32(payload, payload_cap, offset, type, snapshot->temp2_temperature_mc);
         case USER_TVLCOM_DATA_SET_VOLTAGE_LIMIT:
             return s_USER_tvlcomAppendU32(payload, payload_cap, offset, type, snapshot->settings.set_voltage_mv);
         case USER_TVLCOM_DATA_SET_CURRENT_LIMIT:
@@ -328,6 +337,204 @@ static void s_USER_tvlcomSendResponse(USER_tvlcomContext_t *ctx, uint8_t cmd, ui
 static void s_USER_tvlcomSendNack(USER_tvlcomContext_t *ctx, uint8_t seq)
 {
     s_USER_tvlcomSendResponse(ctx, USER_TVLCOM_CMD_NACK, seq, NULL, 0U);
+}
+
+static void s_USER_tvlcomStopStream(USER_tvlcomContext_t *ctx)
+{
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    ctx->stream_enabled = 0U;
+    ctx->stream_fast_count = 0U;
+    ctx->stream_slow_count = 0U;
+    ctx->stream_fast_samples_until_slow = 0U;
+}
+
+static uint16_t s_USER_tvlcomGetStreamValue(uint8_t type, const POWER_ctrlSnapshot_t *snapshot)
+{
+    int32_t value = 0;
+
+    if (snapshot == NULL)
+    {
+        return 0U;
+    }
+
+    switch (type)
+    {
+        case USER_TVLCOM_DATA_INPUT_VOLTAGE:
+            value = (int32_t)snapshot->input_voltage_mv;
+            break;
+        case USER_TVLCOM_DATA_INPUT_CURRENT:
+            value = (int32_t)snapshot->input_current_ma;
+            break;
+        case USER_TVLCOM_DATA_OUTPUT_VOLTAGE:
+            value = (int32_t)snapshot->output_voltage_mv;
+            break;
+        case USER_TVLCOM_DATA_OUTPUT_CURRENT:
+            value = (int32_t)snapshot->output_current_ma;
+            break;
+        case USER_TVLCOM_DATA_CORE_TEMPERATURE:
+            value = snapshot->core_temperature_mc;
+            break;
+        case USER_TVLCOM_DATA_BOARD_TEMPERATURE:
+            value = snapshot->board_temperature_mc;
+            break;
+        case USER_TVLCOM_DATA_TEMP2_TEMPERATURE:
+            value = snapshot->temp2_temperature_mc;
+            break;
+        case USER_TVLCOM_DATA_FAN_SPEED:
+            value = (int32_t)snapshot->fan_speed_permille;
+            break;
+        case USER_TVLCOM_DATA_FAN_SET_VALUE:
+            value = (int32_t)snapshot->settings.fan_set_permille;
+            break;
+        default:
+            break;
+    }
+
+    if (value <= 0)
+    {
+        return 0U;
+    }
+    if (value > 0xFFFF)
+    {
+        return 0xFFFFU;
+    }
+    return (uint16_t)value;
+}
+
+static int s_USER_tvlcomAppendStreamGroup(uint8_t *out,
+                                          uint16_t out_cap,
+                                          uint16_t *offset,
+                                          const uint8_t *types,
+                                          uint8_t count,
+                                          const POWER_ctrlSnapshot_t *snapshot)
+{
+    uint8_t i;
+
+    if ((out == NULL) || (offset == NULL) || (types == NULL) || (snapshot == NULL))
+    {
+        return USER_TVLCOM_STATUS_ERROR;
+    }
+
+    for (i = 0U; i < count; ++i)
+    {
+        uint16_t value;
+
+        if ((*offset + 2U) > out_cap)
+        {
+            return USER_TVLCOM_STATUS_ERROR;
+        }
+        value = s_USER_tvlcomGetStreamValue(types[i], snapshot);
+        s_USER_tvlcomWriteLe16(&out[*offset], value);
+        *offset = (uint16_t)(*offset + 2U);
+
+        if (i < (uint8_t)(count - 1U))
+        {
+            if ((*offset + 2U) > out_cap)
+            {
+                return USER_TVLCOM_STATUS_ERROR;
+            }
+            out[(*offset)++] = USER_TVLCOM_STREAM_SEPARATOR0;
+            out[(*offset)++] = USER_TVLCOM_STREAM_SEPARATOR1;
+        }
+    }
+
+    return USER_TVLCOM_STATUS_OK;
+}
+
+static int s_USER_tvlcomParseStreamTypes(const uint8_t *payload,
+                                         uint16_t payload_len,
+                                         uint16_t *offset,
+                                         uint8_t count,
+                                         uint8_t *types)
+{
+    uint8_t i;
+
+    if ((payload == NULL) || (offset == NULL) || (types == NULL) || (count == 0U) || (count > USER_TVLCOM_STREAM_MAX_TYPES))
+    {
+        return USER_TVLCOM_STATUS_ERROR;
+    }
+
+    for (i = 0U; i < count; ++i)
+    {
+        USER_tvlcomTlvView_t tlv;
+        const USER_tvlcomDataDescriptor_t *descriptor;
+
+        if (s_USER_tvlcomParseNextTlv(payload, payload_len, offset, &tlv) != USER_TVLCOM_STATUS_OK)
+        {
+            return USER_TVLCOM_STATUS_ERROR;
+        }
+        descriptor = s_USER_tvlcomFindDescriptor(tlv.type);
+        if (!s_USER_tvlcomCanRead(descriptor) || (tlv.len != 0U))
+        {
+            return USER_TVLCOM_STATUS_ERROR;
+        }
+        types[i] = tlv.type;
+    }
+
+    return USER_TVLCOM_STATUS_OK;
+}
+
+static int s_USER_tvlcomStartStream(USER_tvlcomContext_t *ctx, const uint8_t *payload, uint16_t payload_len)
+{
+    uint16_t offset = 0U;
+    uint16_t fast_period;
+    uint16_t slow_period = 0U;
+    uint8_t fast_count;
+    uint8_t slow_count = 0U;
+
+    if ((ctx == NULL) || (payload == NULL) || (payload_len < 3U))
+    {
+        return USER_TVLCOM_STATUS_ERROR;
+    }
+
+    fast_period = s_USER_tvlcomReadLe16(&payload[offset]);
+    offset = (uint16_t)(offset + 2U);
+    fast_count = payload[offset++];
+    if ((fast_period == 0U) ||
+        (s_USER_tvlcomParseStreamTypes(payload, payload_len, &offset, fast_count, ctx->stream_fast_types) != USER_TVLCOM_STATUS_OK))
+    {
+        return USER_TVLCOM_STATUS_ERROR;
+    }
+
+    if (offset < payload_len)
+    {
+        if ((offset + 3U) > payload_len)
+        {
+            return USER_TVLCOM_STATUS_ERROR;
+        }
+        slow_period = s_USER_tvlcomReadLe16(&payload[offset]);
+        offset = (uint16_t)(offset + 2U);
+        slow_count = payload[offset++];
+        if ((slow_period == 0U) ||
+            ((slow_period % fast_period) != 0U) ||
+            (s_USER_tvlcomParseStreamTypes(payload, payload_len, &offset, slow_count, ctx->stream_slow_types) != USER_TVLCOM_STATUS_OK))
+        {
+            return USER_TVLCOM_STATUS_ERROR;
+        }
+    }
+
+    if (offset != payload_len)
+    {
+        return USER_TVLCOM_STATUS_ERROR;
+    }
+
+    ctx->stream_fast_period_ms = fast_period;
+    ctx->stream_slow_period_ms = slow_period;
+    ctx->stream_fast_count = fast_count;
+    ctx->stream_slow_count = slow_count;
+    ctx->stream_slow_every_fast_samples = (slow_count > 0U) ? (uint16_t)(slow_period / fast_period) : 0U;
+    if (ctx->stream_slow_every_fast_samples == 0U)
+    {
+        ctx->stream_slow_every_fast_samples = 1U;
+    }
+    ctx->stream_fast_samples_until_slow = 0U;
+    ctx->stream_last_tick_ms = HAL_GetTick();
+    ctx->stream_enabled = 1U;
+    return USER_TVLCOM_STATUS_OK;
 }
 
 static int s_USER_tvlcomBuildReadPayload(const uint8_t *request_payload, uint16_t request_len, uint8_t *response_payload, uint16_t response_cap, uint16_t *response_len)
@@ -541,6 +748,29 @@ static void s_USER_tvlcomHandleFrame(USER_tvlcomContext_t *ctx, const uint8_t *f
             }
             break;
 
+        case USER_TVLCOM_CMD_STREAM_START:
+            if (s_USER_tvlcomStartStream(ctx, payload, payload_len) == USER_TVLCOM_STATUS_OK)
+            {
+                s_USER_tvlcomSendResponse(ctx, USER_TVLCOM_CMD_ACK, seq, NULL, 0U);
+            }
+            else
+            {
+                s_USER_tvlcomSendNack(ctx, seq);
+            }
+            break;
+
+        case USER_TVLCOM_CMD_STREAM_STOP:
+            if (payload_len == 0U)
+            {
+                s_USER_tvlcomStopStream(ctx);
+                s_USER_tvlcomSendResponse(ctx, USER_TVLCOM_CMD_ACK, seq, NULL, 0U);
+            }
+            else
+            {
+                s_USER_tvlcomSendNack(ctx, seq);
+            }
+            break;
+
         default:
             s_USER_tvlcomSendNack(ctx, seq);
             break;
@@ -611,7 +841,7 @@ uint16_t USER_tvlcomBuildFrame(uint8_t cmd, uint8_t seq, const uint8_t *payload,
         memcpy(&out[6], payload, payload_len);
     }
 
-    crc = USER_tvlcomCrc16Modbus(&out[2], (uint16_t)(2U + body_len));
+    crc = USER_tvlcomCrc16Modbus(out, (uint16_t)(USER_TVLCOM_HEADER_SIZE + body_len));
     s_USER_tvlcomWriteLe16(&out[USER_TVLCOM_HEADER_SIZE + body_len], crc);
     return frame_len;
 }
@@ -626,6 +856,61 @@ void USER_tvlcomInit(USER_tvlcomContext_t *ctx, USER_tvlcomSendFn_t send, void *
     memset(ctx, 0, sizeof(*ctx));
     ctx->send = send;
     ctx->send_user = send_user;
+}
+
+void USER_tvlcomRunTask(USER_tvlcomContext_t *ctx)
+{
+    uint32_t now;
+    uint16_t sample_len = 0U;
+    uint8_t sample[64];
+    POWER_ctrlSnapshot_t snapshot;
+    uint8_t include_slow;
+
+    if ((ctx == NULL) || (ctx->send == NULL) || (ctx->stream_enabled == 0U) || (ctx->stream_fast_count == 0U))
+    {
+        return;
+    }
+
+    now = HAL_GetTick();
+    if ((uint32_t)(now - ctx->stream_last_tick_ms) < (uint32_t)ctx->stream_fast_period_ms)
+    {
+        return;
+    }
+    ctx->stream_last_tick_ms = now;
+
+    POWER_getAppSnapshot(&snapshot);
+    if (s_USER_tvlcomAppendStreamGroup(sample,
+                                       (uint16_t)sizeof(sample),
+                                       &sample_len,
+                                       ctx->stream_fast_types,
+                                       ctx->stream_fast_count,
+                                       &snapshot) != USER_TVLCOM_STATUS_OK)
+    {
+        s_USER_tvlcomStopStream(ctx);
+        return;
+    }
+
+    include_slow = (ctx->stream_slow_count > 0U) && (ctx->stream_fast_samples_until_slow == 0U);
+    if (include_slow)
+    {
+        if (s_USER_tvlcomAppendStreamGroup(sample,
+                                           (uint16_t)sizeof(sample),
+                                           &sample_len,
+                                           ctx->stream_slow_types,
+                                           ctx->stream_slow_count,
+                                           &snapshot) != USER_TVLCOM_STATUS_OK)
+        {
+            s_USER_tvlcomStopStream(ctx);
+            return;
+        }
+        ctx->stream_fast_samples_until_slow = (uint8_t)(ctx->stream_slow_every_fast_samples - 1U);
+    }
+    else if (ctx->stream_slow_count > 0U)
+    {
+        --ctx->stream_fast_samples_until_slow;
+    }
+
+    (void)ctx->send(sample, sample_len, ctx->send_user);
 }
 
 void USER_tvlcomFeed(USER_tvlcomContext_t *ctx, const uint8_t *data, uint16_t len)
@@ -694,7 +979,7 @@ void USER_tvlcomFeed(USER_tvlcomContext_t *ctx, const uint8_t *data, uint16_t le
         if ((ctx->expected_len > 0U) && (ctx->rx_len == ctx->expected_len))
         {
             const uint16_t received_crc = s_USER_tvlcomReadLe16(&ctx->rx_buf[ctx->expected_len - USER_TVLCOM_CRC_SIZE]);
-            const uint16_t calculated_crc = USER_tvlcomCrc16Modbus(&ctx->rx_buf[2], (uint16_t)(ctx->expected_len - 2U - USER_TVLCOM_CRC_SIZE));
+            const uint16_t calculated_crc = USER_tvlcomCrc16Modbus(ctx->rx_buf, (uint16_t)(ctx->expected_len - USER_TVLCOM_CRC_SIZE));
 
             if (received_crc == calculated_crc)
             {

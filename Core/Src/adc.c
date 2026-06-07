@@ -112,8 +112,8 @@ void MX_ADC1_Init(void)
   sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
   sConfigInjected.AutoInjectedConv = DISABLE;
   sConfigInjected.QueueInjectedContext = DISABLE;
-  sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJEC_HRTIM_TRG2;
-  sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
+  sConfigInjected.ExternalTrigInjecConv = ADC_INJECTED_SOFTWARE_START;
+  sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_NONE;
   sConfigInjected.InjecOversamplingMode = DISABLE;
   if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
   {
@@ -593,6 +593,72 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc)
 
     BSP_setAppInjectedRaw((uint16_t)vout_raw, (uint16_t)vin_raw);
   }
+}
+
+void ADC_updateAppPowerInjectedRaw(void)
+{
+  uint32_t vin_raw;
+  uint32_t vout_raw;
+
+  if (HAL_ADCEx_InjectedStart(&hadc1) != HAL_OK)
+  {
+    return;
+  }
+
+  if (HAL_ADCEx_InjectedPollForConversion(&hadc1, 2U) == HAL_OK)
+  {
+    vin_raw = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+    vout_raw = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2);
+    BSP_setAppInjectedRaw((uint16_t)vout_raw, (uint16_t)vin_raw);
+  }
+
+  (void)HAL_ADCEx_InjectedStop(&hadc1);
+}
+
+void ADC_pollAppPowerAuxRaw(void)
+{
+  static uint32_t last_poll_tick = 0U;
+  uint32_t now = HAL_GetTick();
+  uint32_t temp1_raw = 0U;
+  uint32_t temp2_raw = 0U;
+  uint32_t die_temp_raw = 0U;
+
+  if ((now - last_poll_tick) < 100U)
+  {
+    return;
+  }
+  last_poll_tick = now;
+
+  ADC_updateAppPowerInjectedRaw();
+
+  if (HAL_ADC_Start(&hadc3) == HAL_OK)
+  {
+    if (HAL_ADC_PollForConversion(&hadc3, 2U) == HAL_OK)
+    {
+      temp1_raw = HAL_ADC_GetValue(&hadc3);
+    }
+    (void)HAL_ADC_Stop(&hadc3);
+  }
+
+  if (HAL_ADC_Start(&hadc2) == HAL_OK)
+  {
+    if (HAL_ADC_PollForConversion(&hadc2, 2U) == HAL_OK)
+    {
+      temp2_raw = HAL_ADC_GetValue(&hadc2);
+    }
+    (void)HAL_ADC_Stop(&hadc2);
+  }
+
+  if (HAL_ADC_Start(&hadc5) == HAL_OK)
+  {
+    if (HAL_ADC_PollForConversion(&hadc5, 2U) == HAL_OK)
+    {
+      die_temp_raw = HAL_ADC_GetValue(&hadc5);
+    }
+    (void)HAL_ADC_Stop(&hadc5);
+  }
+
+  BSP_setAppAuxTemperatureRaw((uint16_t)temp1_raw, (uint16_t)temp2_raw, (uint16_t)die_temp_raw);
 }
 
 /* USER CODE END 1 */

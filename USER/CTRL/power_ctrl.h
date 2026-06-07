@@ -67,6 +67,7 @@ typedef struct
     uint32_t output_current_ma;
     int32_t core_temperature_mc;
     int32_t board_temperature_mc;
+    int32_t temp2_temperature_mc;
 
     uint16_t input_voltage_raw;
     uint16_t input_current_raw;

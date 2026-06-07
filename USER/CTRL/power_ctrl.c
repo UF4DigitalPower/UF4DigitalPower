@@ -4,9 +4,8 @@
  */
 
 #include "power_ctrl.h"
-
 #include <string.h>
-
+#include "adc.h"
 #include "hrtim.h"
 
 #define POWER_CTRL_DEFAULT_SET_VOLTAGE_MV       5000U
@@ -97,6 +96,7 @@ static uint8_t s_POWER_ctrlStageMode = POWER_CTRL_STAGE_NA;
 static uint8_t s_POWER_ctrlCvccMode = POWER_CTRL_CVCC_CV;
 static uint8_t s_POWER_stageModeChanged = 0U;
 static uint8_t s_POWER_pwmEnabled = 0U;
+static uint8_t s_POWER_adcAverageInitialized = 0U;
 
 static int32_t s_POWER_v_err0 = 0;
 static int32_t s_POWER_v_err1 = 0;
@@ -253,6 +253,15 @@ static void s_POWER_sampleAppAdc(void)
 
     BSP_getAppAdcResult(&adc_result);
 
+    if (s_POWER_adcAverageInitialized == 0U)
+    {
+        vin_avg_sum = ((uint32_t)adc_result.vin_raw) << 3;
+        iin_avg_sum = ((uint32_t)adc_result.iin_raw) << 3;
+        vout_avg_sum = ((uint32_t)adc_result.vout_raw) << 3;
+        iout_avg_sum = ((uint32_t)adc_result.iout_raw) << 3;
+        s_POWER_adcAverageInitialized = 1U;
+    }
+
     vin_avg_sum = vin_avg_sum + adc_result.vin_raw - (vin_avg_sum >> 3);
     iin_avg_sum = iin_avg_sum + adc_result.iin_raw - (iin_avg_sum >> 3);
     vout_avg_sum = vout_avg_sum + adc_result.vout_raw - (vout_avg_sum >> 3);
@@ -306,7 +315,7 @@ static void s_POWER_checkAppProtection(void)
 
     const uint32_t vout_mv = s_POWER_getAppU32Nonnegative(s_POWER_sample.measurement.vout_v, 1000.0F);
     const uint32_t iout_ma = s_POWER_getAppU32Nonnegative(s_POWER_sample.measurement.iout_a, 1000.0F);
-    const int32_t board_temp_mc = s_POWER_getAppI32(s_POWER_sample.measurement.temp1_v, 1000.0F);
+    const int32_t board_temp_mc = s_POWER_getAppI32(s_POWER_sample.measurement.temp1_c, 1000.0F);
 
     if ((iout_ma > POWER_CTRL_SHORT_CURRENT_MA) && (vout_mv < POWER_CTRL_SHORT_VOLTAGE_MV))
     {
@@ -701,6 +710,7 @@ void POWER_initAppCtrl(void)
     s_POWER_state = POWER_STATE_INIT;
     s_POWER_softstartState = POWER_SOFTSTART_INIT;
     s_POWER_ctrlCvccMode = POWER_CTRL_CVCC_CV;
+    s_POWER_adcAverageInitialized = 0U;
     s_POWER_initAppValues();
 }
 
@@ -716,14 +726,26 @@ void POWER_getAppSnapshot(POWER_ctrlSnapshot_t *snapshot)
 
     memset(snapshot, 0, sizeof(*snapshot));
     BSP_getAppAdcResult(&adc_result);
-    BSP_getAppMeasurement(&adc_result, &measurement);
+    if (s_POWER_adcAverageInitialized != 0U)
+    {
+        adc_result.vin_raw = s_POWER_sample.vin_raw_avg;
+        adc_result.iin_raw = s_POWER_sample.iin_raw_avg;
+        adc_result.vout_raw = s_POWER_sample.vout_raw_avg;
+        adc_result.iout_raw = s_POWER_sample.iout_raw_avg;
+        measurement = s_POWER_sample.measurement;
+    }
+    else
+    {
+        BSP_getAppMeasurement(&adc_result, &measurement);
+    }
 
     snapshot->input_voltage_mv = s_POWER_getAppU32Nonnegative(measurement.vin_v, 1000.0F);
     snapshot->input_current_ma = s_POWER_getAppU32Nonnegative(measurement.iin_a, 1000.0F);
     snapshot->output_voltage_mv = s_POWER_getAppU32Nonnegative(measurement.vout_v, 1000.0F);
     snapshot->output_current_ma = s_POWER_getAppU32Nonnegative(measurement.iout_a, 1000.0F);
     snapshot->core_temperature_mc = s_POWER_getAppI32(measurement.die_temp_c, 1000.0F);
-    snapshot->board_temperature_mc = s_POWER_getAppI32(measurement.temp1_v, 1000.0F);
+    snapshot->board_temperature_mc = s_POWER_getAppI32(measurement.temp1_c, 1000.0F);
+    snapshot->temp2_temperature_mc = s_POWER_getAppI32(measurement.temp2_c, 1000.0F);
 
     snapshot->input_voltage_raw = adc_result.vin_raw;
     snapshot->input_current_raw = adc_result.iin_raw;

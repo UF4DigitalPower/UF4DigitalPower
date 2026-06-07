@@ -93,6 +93,7 @@ static void s_USER_resetFixture(void)
     s_USER_snapshot.output_current_ma = 900U;
     s_USER_snapshot.core_temperature_mc = 42000;
     s_USER_snapshot.board_temperature_mc = 35000;
+    s_USER_snapshot.temp2_temperature_mc = 36000;
     s_USER_snapshot.input_voltage_raw = 1001U;
     s_USER_snapshot.input_current_raw = 1002U;
     s_USER_snapshot.output_voltage_raw = 1003U;
@@ -199,6 +200,28 @@ static int s_USER_testDebugSnapshot(void)
            s_USER_expect(s_USER_tx[(uint16_t)(offset + 7U)] == USER_TVLCOM_DATA_OUTPUT_VOLTAGE, "debug second tlv");
 }
 
+static int s_USER_testReadTemp2(void)
+{
+    USER_tvlcomContext_t ctx;
+    uint8_t req[64];
+    uint8_t payload[8];
+    uint16_t payload_len = 0U;
+    uint16_t req_len;
+    uint16_t offset;
+
+    s_USER_resetFixture();
+    USER_tvlcomInit(&ctx, s_USER_mockSend, NULL);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_TEMP2_TEMPERATURE, NULL, 0U);
+    req_len = USER_tvlcomBuildFrame(USER_TVLCOM_CMD_READ, 0x27U, payload, payload_len, req, (uint16_t)sizeof(req));
+    USER_tvlcomFeed(&ctx, req, req_len);
+
+    offset = 6U;
+    return s_USER_expect(s_USER_frameCmdIs(USER_TVLCOM_CMD_ACK, 0x27U), "temp2 read ack") &&
+           s_USER_expect(s_USER_tx[offset] == USER_TVLCOM_DATA_TEMP2_TEMPERATURE, "temp2 tlv type") &&
+           s_USER_expect(s_USER_readLe16(&s_USER_tx[(uint16_t)(offset + 1U)]) == 4U, "temp2 tlv len") &&
+           s_USER_expect((int32_t)s_USER_readLe32(&s_USER_tx[(uint16_t)(offset + 3U)]) == s_USER_snapshot.temp2_temperature_mc, "temp2 tlv value");
+}
+
 static int s_USER_testWriteCommitAndRollback(void)
 {
     USER_tvlcomContext_t ctx;
@@ -264,7 +287,7 @@ static int s_USER_testBuildFrameCrc(void)
 {
     uint8_t frame[32];
     uint16_t frame_len = USER_tvlcomBuildFrame(USER_TVLCOM_CMD_REPORT, 0x26U, NULL, 0U, frame, (uint16_t)sizeof(frame));
-    uint16_t crc = USER_tvlcomCrc16Modbus(&frame[2], (uint16_t)(frame_len - 4U));
+    uint16_t crc = USER_tvlcomCrc16Modbus(frame, (uint16_t)(frame_len - 2U));
 
     return s_USER_expect(frame_len == 8U, "build report frame len") &&
            s_USER_expect(frame[0] == USER_TVLCOM_SOF0 && frame[1] == USER_TVLCOM_SOF1, "build sof") &&
@@ -281,6 +304,7 @@ int main(void)
     ok &= s_USER_testBuildFrameCrc();
     ok &= s_USER_testReportSplitFeed();
     ok &= s_USER_testDebugSnapshot();
+    ok &= s_USER_testReadTemp2();
     ok &= s_USER_testWriteCommitAndRollback();
     ok &= s_USER_testReadLengthError();
 

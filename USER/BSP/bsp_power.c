@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include "bsp_temp.h"
+
 BSP_DMA_RAM volatile uint16_t g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_COUNT] = {0U};
 volatile BSP_adcResult_t g_BSP_adcResult = {0U};
 
@@ -44,6 +46,24 @@ static float s_BSP_getAppCurrentFromRaw(uint16_t raw, float scale)
     return ((BSP_POWER_CURRENT_BIAS_V - sense_voltage) / BSP_POWER_CURRENT_SENSE_V_PER_A) * scale;
 }
 
+static float s_BSP_getAppNtcTemperature(uint16_t raw, float raw_full_scale)
+{
+    uint32_t raw_12bit;
+
+    if (raw_full_scale <= 0.0F)
+    {
+        return BSP_tempAdcToTemperature(0U);
+    }
+
+    raw_12bit = (uint32_t)((((float)raw * BSP_POWER_ADC_12BIT_MAX_RAW) / raw_full_scale) + 0.5F);
+    if (raw_12bit > (uint32_t)BSP_POWER_ADC_12BIT_MAX_RAW)
+    {
+        raw_12bit = (uint32_t)BSP_POWER_ADC_12BIT_MAX_RAW;
+    }
+
+    return BSP_tempAdcToTemperature(raw_12bit);
+}
+
 void BSP_initAppPower(void)
 {
     memset((void *)g_BSP_adc1RegularDma, 0, sizeof(g_BSP_adc1RegularDma));
@@ -63,7 +83,10 @@ void BSP_setAppInjectedRaw(uint16_t vout_raw, uint16_t vin_raw)
     g_BSP_adcResult.vout_raw = s_BSP_getAppCalibratedRaw(vout_raw,
                                                          BSP_POWER_VOUT_RAW_CAL_K,
                                                          BSP_POWER_VOUT_RAW_CAL_B);
-    g_BSP_adcResult.vin_raw = vin_raw;
+    if ((vin_raw != 0U) || (g_BSP_adcResult.vin_raw == 0U))
+    {
+        g_BSP_adcResult.vin_raw = vin_raw;
+    }
 }
 
 void BSP_setAppAuxTemperatureRaw(uint16_t temp1_raw, uint16_t temp2_raw, uint16_t die_temp_raw)
@@ -102,8 +125,8 @@ void BSP_getAppMeasurement(const BSP_adcResult_t *adc_result, BSP_powerMeasureme
     measurement->vout_v = BSP_getAppVoutVoltage(adc_result->vout_raw);
     measurement->iin_a = BSP_getAppIinCurrent(adc_result->iin_raw);
     measurement->iout_a = BSP_getAppIoutCurrent(adc_result->iout_raw);
-    measurement->temp1_v = BSP_getAppAdc3Voltage(adc_result->temp1_raw);
-    measurement->temp2_v = BSP_getAppAdc2Voltage(adc_result->temp2_raw);
+    measurement->temp1_c = BSP_getAppTemp1Temperature(adc_result->temp1_raw);
+    measurement->temp2_c = BSP_getAppTemp2Temperature(adc_result->temp2_raw);
     measurement->die_temp_c = BSP_getAppDieTemperature(adc_result->die_temp_raw);
 }
 
@@ -145,6 +168,16 @@ float BSP_getAppIinCurrent(uint16_t raw)
 float BSP_getAppIoutCurrent(uint16_t raw)
 {
     return s_BSP_getAppCurrentFromRaw(raw, BSP_POWER_IOUT_SCALE);
+}
+
+float BSP_getAppTemp1Temperature(uint16_t raw)
+{
+    return s_BSP_getAppNtcTemperature(raw, BSP_POWER_ADC3_FULL_SCALE_RAW);
+}
+
+float BSP_getAppTemp2Temperature(uint16_t raw)
+{
+    return s_BSP_getAppNtcTemperature(raw, BSP_POWER_ADC2_FULL_SCALE_RAW);
 }
 
 float BSP_getAppDieTemperature(uint16_t raw)

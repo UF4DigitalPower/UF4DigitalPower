@@ -57,8 +57,8 @@ typedef struct
     float vout_v;
     float iin_a;
     float iout_a;
-    float temp1_v;
-    float temp2_v;
+    float temp1_c;
+    float temp2_c;
     float die_temp_c;
 } BSP_powerMeasurement_t;
 
@@ -86,13 +86,13 @@ typedef struct
  *
  *   V_real = V_adc_pin * (R_upper / R_lower)
  */
-#define BSP_POWER_STAGE_MAX_VOLTAGE_V        50.0F
+#define BSP_POWER_STAGE_MAX_VOLTAGE_V        48.0F
 #define BSP_POWER_DIVIDER_SCALE(r_upper, r_lower) ((r_upper) / (r_lower))
 
 #define BSP_POWER_VIN_R_UPPER_OHM            75000.0F
-#define BSP_POWER_VIN_R_LOWER_OHM            4700.0F
+#define BSP_POWER_VIN_R_LOWER_OHM            5000.0F
 #define BSP_POWER_VOUT_R_UPPER_OHM           75000.0F
-#define BSP_POWER_VOUT_R_LOWER_OHM           4700.0F
+#define BSP_POWER_VOUT_R_LOWER_OHM           5000.0F
 
 #define BSP_POWER_VIN_SENSE_SCALE            BSP_POWER_DIVIDER_SCALE(BSP_POWER_VIN_R_UPPER_OHM, BSP_POWER_VIN_R_LOWER_OHM)
 #define BSP_POWER_VOUT_SENSE_SCALE           BSP_POWER_DIVIDER_SCALE(BSP_POWER_VOUT_R_UPPER_OHM, BSP_POWER_VOUT_R_LOWER_OHM)
@@ -102,8 +102,8 @@ typedef struct
  * reverse current and are clipped to 0 A; 1.65 V down to 0 V is positive
  * current. Keep board-specific shunt/gain/trim here.
  */
-#define BSP_POWER_CURRENT_SHUNT_OHM          0.005F
-#define BSP_POWER_CURRENT_AMP_GAIN           62.0F
+#define BSP_POWER_CURRENT_SHUNT_OHM          0.007F
+#define BSP_POWER_CURRENT_AMP_GAIN           20.0F
 #define BSP_POWER_CURRENT_BIAS_V             1.650F
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)
 #define BSP_POWER_IIN_SCALE                  1.0F
@@ -149,6 +149,8 @@ float BSP_getAppVinVoltage(uint16_t raw);
 float BSP_getAppVoutVoltage(uint16_t raw);
 float BSP_getAppIinCurrent(uint16_t raw);
 float BSP_getAppIoutCurrent(uint16_t raw);
+float BSP_getAppTemp1Temperature(uint16_t raw);
+float BSP_getAppTemp2Temperature(uint16_t raw);
 float BSP_getAppDieTemperature(uint16_t raw);
 float BSP_getAppInnerCurrentA(const BSP_powerMeasurement_t *measurement, BSP_powerStageMode_t mode);
 
