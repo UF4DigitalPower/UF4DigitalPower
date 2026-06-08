@@ -30,16 +30,22 @@
 #define POWER_CTRL_SLOW_LOOP_HZ                 200U
 #define POWER_CTRL_SLOW_LOOP_DIVIDER            (POWER_CTRL_FAST_LOOP_HZ / POWER_CTRL_SLOW_LOOP_HZ)
 
-#define POWER_CTRL_BUCK_PID_B0                  5271
-#define POWER_CTRL_BUCK_PID_B1                 -10363
-#define POWER_CTRL_BUCK_PID_B2                  5093
-#define POWER_CTRL_BOOST_PID_B0                 8044
-#define POWER_CTRL_BOOST_PID_B1                -15813
-#define POWER_CTRL_BOOST_PID_B2                 7772
+#define POWER_CTRL_BUCK_PID_B0                  5795
+#define POWER_CTRL_BUCK_PID_B1                 -11411
+#define POWER_CTRL_BUCK_PID_B2                  5617
+#define POWER_CTRL_BOOST_PID_B0                 8844
+#define POWER_CTRL_BOOST_PID_B1                -17413
+#define POWER_CTRL_BOOST_PID_B2                 8572
 
 #define POWER_CTRL_CURRENT_LOOP_KP              6
 #define POWER_CTRL_CURRENT_LOOP_KI              3
 #define POWER_CTRL_CURRENT_LOOP_KD              1
+#define POWER_CTRL_BUCK_LIGHT_LOAD_ENTER_RAW    70
+#define POWER_CTRL_BUCK_LIGHT_LOAD_EXIT_RAW     175
+#define POWER_CTRL_BUCK_ENTER_RATIO             0.85F
+#define POWER_CTRL_BUCK_EXIT_RATIO              0.90F
+#define POWER_CTRL_BOOST_ENTER_RATIO            1.15F
+#define POWER_CTRL_BOOST_EXIT_RATIO             1.10F
 
 typedef enum
 {
@@ -102,6 +108,7 @@ static uint8_t s_POWER_stageModeChanged = 0U;
 static uint8_t s_POWER_pwmEnabled = 0U;
 static uint8_t s_POWER_adcAverageInitialized = 0U;
 static uint8_t s_POWER_vinUvLocked = 1U;
+static uint8_t s_POWER_buckLightLoad = 0U;
 
 static int32_t s_POWER_v_err0 = 0;
 static int32_t s_POWER_v_err1 = 0;
@@ -212,6 +219,18 @@ static uint16_t s_POWER_getAppForwardCurrentRaw(uint16_t raw)
     return (uint16_t)(bias_raw - raw);
 }
 
+static void s_POWER_setAppBuckLightLoad(uint8_t enabled)
+{
+    const uint8_t new_state = (enabled != 0U) ? 1U : 0U;
+
+    if (s_POWER_buckLightLoad == new_state)
+    {
+        return;
+    }
+
+    s_POWER_buckLightLoad = new_state;
+}
+
 static uint16_t s_POWER_getAppCalibratedRaw(uint16_t raw, uint32_t k, uint32_t b)
 {
     uint32_t calibrated = (((uint32_t)raw * k) >> 12) + b;
@@ -229,6 +248,7 @@ static void s_POWER_resetAppPid(void)
     s_POWER_u1 = 0;
     s_POWER_i0 = 0;
     s_POWER_currentIntegral = 0;
+    s_POWER_setAppBuckLightLoad(0U);
 }
 
 static void s_POWER_stopAppPwm(void)
@@ -236,6 +256,7 @@ static void s_POWER_stopAppPwm(void)
     s_POWER_pwmEnabled = 0U;
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+    s_POWER_buckLightLoad = 0U;
 }
 
 static void s_POWER_startAppPwm(void)
@@ -245,6 +266,7 @@ static void s_POWER_startAppPwm(void)
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
     s_POWER_pwmEnabled = 1U;
+    s_POWER_buckLightLoad = 0U;
 }
 
 static void s_POWER_updateAppReferences(void)
@@ -460,11 +482,11 @@ static void s_POWER_updateAppMode(void)
     switch (s_POWER_ctrlStageMode)
     {
         case POWER_CTRL_STAGE_NA:
-            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 0.8F))
+            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BUCK_ENTER_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BUCK;
             }
-            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 1.2F))
+            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BOOST_ENTER_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BOOST;
             }
@@ -475,22 +497,22 @@ static void s_POWER_updateAppMode(void)
             break;
 
         case POWER_CTRL_STAGE_BUCK:
-            if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 1.2F))
+            if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BOOST_ENTER_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BOOST;
             }
-            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 0.85F))
+            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BUCK_EXIT_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_MIX;
             }
             break;
 
         case POWER_CTRL_STAGE_BOOST:
-            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 0.8F))
+            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BUCK_ENTER_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BUCK;
             }
-            else if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 1.15F))
+            else if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BOOST_EXIT_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_MIX;
             }
@@ -498,11 +520,11 @@ static void s_POWER_updateAppMode(void)
 
         case POWER_CTRL_STAGE_MIX:
         default:
-            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 0.8F))
+            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BUCK_ENTER_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BUCK;
             }
-            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 1.2F))
+            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BOOST_ENTER_RATIO))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BOOST;
             }
@@ -573,13 +595,24 @@ static void s_POWER_runAppPid(void)
             s_POWER_v_err2 = s_POWER_v_err1;
             s_POWER_v_err1 = s_POWER_v_err0;
             s_POWER_u1 = s_POWER_u0;
-            s_POWER_controlValue.boost_duty_tick = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK;
+            if (iout_temp <= POWER_CTRL_BUCK_LIGHT_LOAD_ENTER_RAW)
+            {
+                s_POWER_setAppBuckLightLoad(1U);
+            }
+            else if (iout_temp >= POWER_CTRL_BUCK_LIGHT_LOAD_EXIT_RAW)
+            {
+                s_POWER_setAppBuckLightLoad(0U);
+            }
+            s_POWER_controlValue.boost_duty_tick = (s_POWER_buckLightLoad != 0U)
+                                                       ? BSP_POWER_BOOST_DUTY_MIN_TICK
+                                                       : BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK;
             s_POWER_controlValue.buck_duty_tick = s_POWER_getAppClampDuty((s_POWER_u0 >> 8) * 3,
                                                                           BSP_POWER_BUCK_DUTY_MIN_TICK,
                                                                           (uint32_t)s_POWER_controlValue.buck_max_duty_tick);
             break;
 
         case POWER_CTRL_STAGE_BOOST:
+            s_POWER_setAppBuckLightLoad(0U);
             s_POWER_u0 = s_POWER_u1 +
                          (s_POWER_v_err0 * POWER_CTRL_BOOST_PID_B0) +
                          (s_POWER_v_err1 * POWER_CTRL_BOOST_PID_B1) +
@@ -595,6 +628,7 @@ static void s_POWER_runAppPid(void)
 
         case POWER_CTRL_STAGE_MIX:
         default:
+            s_POWER_setAppBuckLightLoad(0U);
             s_POWER_u0 = s_POWER_u1 +
                          (s_POWER_v_err0 * POWER_CTRL_BOOST_PID_B0) +
                          (s_POWER_v_err1 * POWER_CTRL_BOOST_PID_B1) +
