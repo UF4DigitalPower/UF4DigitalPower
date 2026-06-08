@@ -18,12 +18,14 @@ extern "C" {
 
 /* ADC topology ------------------------------------------------------------- */
 
-#define BSP_POWER_ADC1_REGULAR_COUNT  2U
+#define BSP_POWER_ADC1_REGULAR_COUNT  4U
 #define BSP_POWER_ADC1_INJECTED_COUNT 2U
 
 typedef enum
 {
-    BSP_POWER_ADC1_REGULAR_IIN = 0U,
+    BSP_POWER_ADC1_REGULAR_VIN = 0U,
+    BSP_POWER_ADC1_REGULAR_IIN,
+    BSP_POWER_ADC1_REGULAR_VOUT,
     BSP_POWER_ADC1_REGULAR_IOUT,
 } BSP_powerAdc1RegularIndex_t;
 
@@ -65,7 +67,7 @@ typedef struct
 /* ADC scaling -------------------------------------------------------------- */
 
 #define BSP_POWER_ADC_12BIT_MAX_RAW          4095.0F
-#define BSP_POWER_ADC1_FULL_SCALE_RAW        BSP_POWER_ADC_12BIT_MAX_RAW
+#define BSP_POWER_ADC1_FULL_SCALE_RAW        8190.0F
 #define BSP_POWER_ADC2_FULL_SCALE_RAW        65520.0F
 #define BSP_POWER_ADC3_FULL_SCALE_RAW        65520.0F
 #define BSP_POWER_ADC5_FULL_SCALE_RAW        32760.0F

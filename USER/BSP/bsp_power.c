@@ -72,7 +72,11 @@ void BSP_initAppPower(void)
 
 void BSP_updateAppAdcResultFromBuffers(void)
 {
+    g_BSP_adcResult.vin_raw = g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_VIN];
     g_BSP_adcResult.iin_raw = g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_IIN];
+    g_BSP_adcResult.vout_raw = s_BSP_getAppCalibratedRaw(g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_VOUT],
+                                                         BSP_POWER_VOUT_RAW_CAL_K,
+                                                         BSP_POWER_VOUT_RAW_CAL_B);
     g_BSP_adcResult.iout_raw = s_BSP_getAppCalibratedRaw(g_BSP_adc1RegularDma[BSP_POWER_ADC1_REGULAR_IOUT],
                                                          BSP_POWER_IOUT_RAW_CAL_K,
                                                          BSP_POWER_IOUT_RAW_CAL_B);

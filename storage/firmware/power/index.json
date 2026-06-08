@@ -3,6 +3,13 @@
   "kind": "Power",
   "versions": [
     {
+      "version": "v0.1.0",
+      "date": "2026-06-07",
+      "channel": "stable",
+      "recommended": true,
+      "manifest_url": "/api/v1/firmware/power/versions/v0.1.0"
+    },
+    {
       "version": "v0.0.2",
       "date": "2026-05-30",
       "channel": "beta",

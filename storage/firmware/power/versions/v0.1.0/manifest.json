@@ -1,0 +1,39 @@
+{
+  "project": "F4CP",
+  "kind": "Power",
+  "version": "v0.1.0",
+  "device": "STM32G474CBT6",
+  "hardware": "F4CP-G474-Power",
+  "channel": "stable",
+  "date": "2026-06-07",
+  "min_client": "0.4.0",
+  "files": {
+    "bin": {
+      "name": "F4CP-Power-v0.1.0.bin",
+      "download_url": "/api/v1/firmware/power/versions/v0.1.0/download?type=bin",
+      "sha256": "3c12696cb818c265bb9ac9ae873163fc1262b6356dca584b9148ec28da1a93fe",
+      "size": 54656
+    },
+    "hex": {
+      "name": "F4CP-Power-v0.1.0.hex",
+      "download_url": "/api/v1/firmware/power/versions/v0.1.0/download?type=hex",
+      "sha256": "c2cd370d663b22915fb8accd772868ecd4e0e5ada0cbf5b88a0bc5b2d7f672e9",
+      "size": 153810
+    }
+  },
+  "burn": {
+    "method": "pyocd",
+    "target": "stm32g474cbtx",
+    "reset_after_download": true
+  },
+  "changelog_url": "/api/v1/firmware/power/versions/v0.1.0/changelog",
+  "notes": [
+    "正式发布 v0.1.0",
+    "适用设备：F4CP-POWER / STM32G474CBT6",
+    "启用 PB5 栅极驱动器使能输出，上电后默认拉高 GATE_EN",
+    "ADC1 规则采样切换为 VIN/IIN/VOUT/IOUT 四通道，使用 HRTIM 触发和 4x 过采样",
+    "控制环使用快速 ADC 采样值参与 PID，降低输出在 VIN 和 0 之间跳变的风险",
+    "保持 TVLCOM/USB CDC 通信和上下位机电源页协议对接",
+    "发布日期：2026-06-07"
+  ]
+}

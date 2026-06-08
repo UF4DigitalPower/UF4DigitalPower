@@ -71,6 +71,8 @@ void Error_Handler(void);
 #define ADC_TEMP1_GPIO_Port GPIOB
 #define ADC_TEMP2_Pin GPIO_PIN_2
 #define ADC_TEMP2_GPIO_Port GPIOB
+#define GATE_EN_Pin GPIO_PIN_5
+#define GATE_EN_GPIO_Port GPIOB
 #define BLUE_Pin GPIO_PIN_11
 #define BLUE_GPIO_Port GPIOB
 #define GREEN_Pin GPIO_PIN_12

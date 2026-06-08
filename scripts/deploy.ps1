@@ -1,6 +1,6 @@
 ﻿param(
     [string]$Kind = "power",
-    [string]$Version = "v0.0.2",
+    [string]$Version = "v0.1.0",
     [string]$ServerUser = "root",
     [string]$ServerHost = "38.76.214.157",
     [string]$ServerPort = "1564",
@@ -8,21 +8,24 @@
     [string]$SshKey = "$env:USERPROFILE\.ssh\hepi_deploy_ed25519"
 )
 
+Set-StrictMode -Version Latest
 $ReleaseDate = Get-Date -Format "yyyy-MM-dd"
 
-python scripts/publish_firmware.py `
+uv run python scripts/publish_firmware.py `
     --kind $Kind `
     --version $Version `
     --bin "cmake-build-debug/UF4DigitalPower.bin" `
     --hex "cmake-build-debug/UF4DigitalPower.hex" `
-    --channel beta `
+    --channel stable `
     --set-latest `
     --storage "./storage" `
     --notes `
-        "本地发布 $Version" `
-        "发布说明：完善骨架代码，完善触发逻辑，绑定虚拟串口" `
-        "适用设备：F4CP-POWER" `
-        "更新内容：通过W25Q64 SPI闪存驱动添加持久设置存储，将闪存存档/加载集成到电源控制和协议中，并更新ADC校准和控制算法" `
+        "正式发布 $Version" `
+        "适用设备：F4CP-POWER / STM32G474CBT6" `
+        "启用 PB5 栅极驱动器使能输出，上电后默认拉高 GATE_EN" `
+        "ADC1 规则采样切换为 VIN/IIN/VOUT/IOUT 四通道，使用 HRTIM 触发和 4x 过采样" `
+        "控制环使用快速 ADC 采样值参与 PID，降低输出在 VIN 和 0 之间跳变的风险" `
+        "保持 TVLCOM/USB CDC 通信和上下位机电源页协议对接" `
         "发布日期：$ReleaseDate"
 
 if ($LASTEXITCODE -ne 0) {
