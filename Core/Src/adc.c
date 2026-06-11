@@ -21,7 +21,6 @@
 #include "adc.h"
 
 /* USER CODE BEGIN 0 */
-#include "bsp_power.h"
 
 /* USER CODE END 0 */
 
@@ -535,48 +534,5 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 }
 
 /* USER CODE BEGIN 1 */
-void ADC_pollAppPowerAuxRaw(void)
-{
-  static uint32_t last_poll_tick = 0U;
-  uint32_t now = HAL_GetTick();
-  uint32_t temp1_raw = 0U;
-  uint32_t temp2_raw = 0U;
-  uint32_t die_temp_raw = 0U;
-
-  if ((now - last_poll_tick) < 100U)
-  {
-    return;
-  }
-  last_poll_tick = now;
-
-  if (HAL_ADC_Start(&hadc3) == HAL_OK)
-  {
-    if (HAL_ADC_PollForConversion(&hadc3, 2U) == HAL_OK)
-    {
-      temp1_raw = HAL_ADC_GetValue(&hadc3);
-    }
-    (void)HAL_ADC_Stop(&hadc3);
-  }
-
-  if (HAL_ADC_Start(&hadc2) == HAL_OK)
-  {
-    if (HAL_ADC_PollForConversion(&hadc2, 2U) == HAL_OK)
-    {
-      temp2_raw = HAL_ADC_GetValue(&hadc2);
-    }
-    (void)HAL_ADC_Stop(&hadc2);
-  }
-
-  if (HAL_ADC_Start(&hadc5) == HAL_OK)
-  {
-    if (HAL_ADC_PollForConversion(&hadc5, 2U) == HAL_OK)
-    {
-      die_temp_raw = HAL_ADC_GetValue(&hadc5);
-    }
-    (void)HAL_ADC_Stop(&hadc5);
-  }
-
-  BSP_setAppAuxTemperatureRaw((uint16_t)temp1_raw, (uint16_t)temp2_raw, (uint16_t)die_temp_raw);
-}
 
 /* USER CODE END 1 */

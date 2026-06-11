@@ -85,6 +85,8 @@ void Error_Handler(void);
 #define PWM_L1_GPIO_Port GPIOA
 #define PWM_H1_Pin GPIO_PIN_9
 #define PWM_H1_GPIO_Port GPIOA
+#define DIV_SW_Pin GPIO_PIN_5
+#define DIV_SW_GPIO_Port GPIOB
 #define FAN_PWM_Pin GPIO_PIN_9
 #define FAN_PWM_GPIO_Port GPIOB
 
