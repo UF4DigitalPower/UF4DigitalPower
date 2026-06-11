@@ -19,7 +19,6 @@ extern "C" {
 /* ADC topology ------------------------------------------------------------- */
 
 #define BSP_POWER_ADC1_REGULAR_COUNT  4U
-#define BSP_POWER_ADC1_INJECTED_COUNT 2U
 
 typedef enum
 {
@@ -28,12 +27,6 @@ typedef enum
     BSP_POWER_ADC1_REGULAR_VOUT,
     BSP_POWER_ADC1_REGULAR_IOUT,
 } BSP_powerAdc1RegularIndex_t;
-
-typedef enum
-{
-    BSP_POWER_ADC1_INJECTED_VOUT = 0U,
-    BSP_POWER_ADC1_INJECTED_VIN,
-} BSP_powerAdc1InjectedIndex_t;
 
 typedef enum
 {
@@ -115,12 +108,12 @@ typedef struct
 
 #define BSP_POWER_HRTIM_PERIOD_TICK          27200U
 #define BSP_POWER_BUCK_DUTY_MIN_TICK         136U
-#define BSP_POWER_BUCK_DUTY_MAX_TICK         25840U
+#define BSP_POWER_BUCK_DUTY_MAX_TICK         25568U
 #define BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK    21760U
 #define BSP_POWER_BOOST_DUTY_MIN_TICK        136U
 #define BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK   1800U
 #define BSP_POWER_BOOST_DUTY_MAX_TICK        17680U
-#define BSP_POWER_BOOST_DUTY_SYNC_MAX_TICK   25840U
+#define BSP_POWER_BOOST_DUTY_SYNC_MAX_TICK   25568U
 
 /* Example-project raw trims: y = raw * K / 4096 + B. */
 #define BSP_POWER_VOUT_RAW_CAL_K             4099U
@@ -137,7 +130,6 @@ extern volatile BSP_adcResult_t g_BSP_adcResult;
 
 void BSP_initAppPower(void);
 void BSP_updateAppAdcResultFromBuffers(void);
-void BSP_setAppInjectedRaw(uint16_t vout_raw, uint16_t vin_raw);
 void BSP_setAppAuxTemperatureRaw(uint16_t temp1_raw, uint16_t temp2_raw, uint16_t die_temp_raw);
 void BSP_getAppAdcResult(BSP_adcResult_t *result);
 void BSP_getAppMeasurement(const BSP_adcResult_t *adc_result, BSP_powerMeasurement_t *measurement);

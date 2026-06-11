@@ -70,7 +70,7 @@ static uint32_t s_POWER_getAppU32Nonnegative(...);
 宏定义使用全大写，并带模块前缀和单位：
 
 ```c
-#define BSP_POWER_ADC1_REGULAR_COUNT  2U
+#define BSP_POWER_ADC1_REGULAR_COUNT  4U
 #define POWER_CTRL_STATE_FLAG_RUN     0x08U
 #define USER_TVLCOM_MAX_PAYLOAD_SIZE  384U
 ```

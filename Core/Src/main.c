@@ -109,7 +109,16 @@ int main(void)
   MX_ADC2_Init();
   MX_ADC3_Init();
   MX_USB_Device_Init();
+  MX_TIM6_Init();
+  MX_TIM7_Init();
+  MX_TIM16_Init();
   /* USER CODE BEGIN 2 */
+  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, 0U);
+  if (HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   BSP_initAppPower();
   POWER_initAppCtrl();
   USER_flashStoreInitApp();
@@ -145,6 +154,7 @@ int main(void)
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP);
 
   /* USER CODE END 2 */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)

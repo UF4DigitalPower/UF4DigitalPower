@@ -16,6 +16,7 @@ static uint8_t s_USER_enabled;
 static uint32_t s_USER_applyCount;
 static uint8_t s_USER_tx[USER_TVLCOM_MAX_FRAME_SIZE];
 static uint16_t s_USER_txLen;
+static uint32_t s_USER_tickMs;
 
 static void s_USER_writeLe16(uint8_t *data, uint16_t value)
 {
@@ -70,6 +71,11 @@ void USER_flashStoreRequestAppSave(void)
 {
 }
 
+uint32_t HAL_GetTick(void)
+{
+    return s_USER_tickMs;
+}
+
 static int s_USER_mockSend(const uint8_t *data, uint16_t len, void *user)
 {
     (void)user;
@@ -86,6 +92,7 @@ static void s_USER_resetFixture(void)
     s_USER_txLen = 0U;
     s_USER_enabled = 0U;
     s_USER_applyCount = 0U;
+    s_USER_tickMs = 0U;
 
     s_USER_snapshot.input_voltage_mv = 24000U;
     s_USER_snapshot.input_current_ma = 1200U;
@@ -200,6 +207,71 @@ static int s_USER_testDebugSnapshot(void)
            s_USER_expect(s_USER_tx[(uint16_t)(offset + 7U)] == USER_TVLCOM_DATA_OUTPUT_VOLTAGE, "debug second tlv");
 }
 
+static int s_USER_testReportFieldOrder(void)
+{
+    USER_tvlcomContext_t ctx;
+    uint8_t req[32];
+    uint16_t req_len;
+    uint16_t offset = 6U;
+    static const uint8_t expected_types[] = {
+        USER_TVLCOM_DATA_INPUT_VOLTAGE,
+        USER_TVLCOM_DATA_INPUT_CURRENT,
+        USER_TVLCOM_DATA_OUTPUT_VOLTAGE,
+        USER_TVLCOM_DATA_OUTPUT_CURRENT,
+        USER_TVLCOM_DATA_CORE_TEMPERATURE,
+        USER_TVLCOM_DATA_BOARD_TEMPERATURE,
+        USER_TVLCOM_DATA_TEMP2_TEMPERATURE,
+        USER_TVLCOM_DATA_SET_VOLTAGE_LIMIT,
+        USER_TVLCOM_DATA_SET_CURRENT_LIMIT,
+        USER_TVLCOM_DATA_CC_CV_MODE,
+        USER_TVLCOM_DATA_POWER_STATE,
+        USER_TVLCOM_DATA_FAULT_STATE,
+        USER_TVLCOM_DATA_STATE_MACHINE_FLAG_BITS,
+        USER_TVLCOM_DATA_STATE_MACHINE_STATE,
+        USER_TVLCOM_DATA_INPUT_CURRENT_RAW,
+        USER_TVLCOM_DATA_OUTPUT_CURRENT_RAW,
+        USER_TVLCOM_DATA_OTP_VALUE,
+        USER_TVLCOM_DATA_OTP_SET_VALUE,
+        USER_TVLCOM_DATA_OVP_VALUE,
+        USER_TVLCOM_DATA_OVP_SET_VALUE,
+        USER_TVLCOM_DATA_OCP_VALUE,
+        USER_TVLCOM_DATA_OCP_SET_VALUE,
+        USER_TVLCOM_DATA_DUTY_CMD,
+        USER_TVLCOM_DATA_PWM_A_COMPARE,
+        USER_TVLCOM_DATA_PWM_D_COMPARE,
+        USER_TVLCOM_DATA_FAN_SPEED,
+        USER_TVLCOM_DATA_FAN_SET_VALUE,
+        USER_TVLCOM_DATA_LOOP_CURRENT_FEEDBACK,
+        USER_TVLCOM_DATA_LOOP_CURRENT_REFERENCE,
+        USER_TVLCOM_DATA_VOLTAGE_LOOP_CURRENT_REFERENCE,
+    };
+    uint32_t i;
+
+    s_USER_resetFixture();
+    USER_tvlcomInit(&ctx, s_USER_mockSend, NULL);
+    req_len = USER_tvlcomBuildFrame(USER_TVLCOM_CMD_REPORT, 0x31U, NULL, 0U, req, (uint16_t)sizeof(req));
+    USER_tvlcomFeed(&ctx, req, req_len);
+
+    if (!s_USER_expect(s_USER_frameCmdIs(USER_TVLCOM_CMD_REPORT, 0x31U), "report field order cmd/seq"))
+    {
+        return 0;
+    }
+
+    for (i = 0U; i < (uint32_t)(sizeof(expected_types) / sizeof(expected_types[0])); ++i)
+    {
+        char name[64];
+
+        snprintf(name, sizeof(name), "report field %lu type", (unsigned long)i);
+        if (!s_USER_expect(s_USER_tx[offset] == expected_types[i], name))
+        {
+            return 0;
+        }
+        offset = (uint16_t)(offset + 3U + s_USER_readLe16(&s_USER_tx[offset + 1U]));
+    }
+
+    return s_USER_expect(offset == (uint16_t)(s_USER_txLen - 2U), "report field order payload consumed");
+}
+
 static int s_USER_testReadTemp2(void)
 {
     USER_tvlcomContext_t ctx;
@@ -296,6 +368,85 @@ static int s_USER_testBuildFrameCrc(void)
            s_USER_expect(s_USER_readLe16(&frame[6]) == crc, "build crc");
 }
 
+static int s_USER_testStreamStartStopAndSchedule(void)
+{
+    USER_tvlcomContext_t ctx;
+    uint8_t req[128];
+    uint8_t payload[96];
+    uint16_t payload_len = 0U;
+    uint16_t req_len;
+    uint16_t expected_fast_len = 14U;
+    uint16_t expected_slow_len = 18U;
+
+    s_USER_resetFixture();
+    USER_tvlcomInit(&ctx, s_USER_mockSend, NULL);
+
+    s_USER_writeLe16(payload, 20U);
+    payload_len = 2U;
+    payload[payload_len++] = 4U;
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_INPUT_VOLTAGE, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_INPUT_CURRENT, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_OUTPUT_VOLTAGE, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_OUTPUT_CURRENT, NULL, 0U);
+    s_USER_writeLe16(&payload[payload_len], 1000U);
+    payload_len = (uint16_t)(payload_len + 2U);
+    payload[payload_len++] = 5U;
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_CORE_TEMPERATURE, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_BOARD_TEMPERATURE, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_TEMP2_TEMPERATURE, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_FAN_SPEED, NULL, 0U);
+    payload_len = s_USER_appendTlv(payload, payload_len, USER_TVLCOM_DATA_FAN_SET_VALUE, NULL, 0U);
+
+    req_len = USER_tvlcomBuildFrame(USER_TVLCOM_CMD_STREAM_START, 0x41U, payload, payload_len, req, (uint16_t)sizeof(req));
+    USER_tvlcomFeed(&ctx, req, req_len);
+
+    if (!s_USER_expect(s_USER_frameCmdIs(USER_TVLCOM_CMD_ACK, 0x41U), "stream start ack"))
+    {
+        return 0;
+    }
+
+    USER_tvlcomRunTask(&ctx);
+    if (!s_USER_expect(s_USER_txLen == 8U, "stream no sample before period"))
+    {
+        return 0;
+    }
+
+    s_USER_tickMs = 20U;
+    USER_tvlcomRunTask(&ctx);
+    if (!s_USER_expect(s_USER_txLen == (uint16_t)(expected_fast_len + expected_slow_len), "stream first sample fast+slow"))
+    {
+        return 0;
+    }
+    if (!s_USER_expect(s_USER_readLe16(&s_USER_tx[0]) == (uint16_t)s_USER_snapshot.input_voltage_mv, "stream first vin"))
+    {
+        return 0;
+    }
+    if (!s_USER_expect(s_USER_tx[2] == 0xFEU && s_USER_tx[3] == 0xEDU, "stream fast separator"))
+    {
+        return 0;
+    }
+    if (!s_USER_expect(s_USER_readLe16(&s_USER_tx[expected_fast_len]) == (uint16_t)s_USER_snapshot.core_temperature_mc, "stream first slow temp"))
+    {
+        return 0;
+    }
+
+    s_USER_tickMs = 40U;
+    USER_tvlcomRunTask(&ctx);
+    if (!s_USER_expect(s_USER_txLen == expected_fast_len, "stream second sample fast only"))
+    {
+        return 0;
+    }
+
+    req_len = USER_tvlcomBuildFrame(USER_TVLCOM_CMD_STREAM_STOP, 0x42U, NULL, 0U, req, (uint16_t)sizeof(req));
+    USER_tvlcomFeed(&ctx, req, req_len);
+    if (!s_USER_expect(s_USER_frameCmdIs(USER_TVLCOM_CMD_ACK, 0x42U), "stream stop ack"))
+    {
+        return 0;
+    }
+
+    return s_USER_expect(ctx.stream_enabled == 0U, "stream disabled after stop");
+}
+
 int main(void)
 {
     int ok = 1;
@@ -303,10 +454,12 @@ int main(void)
     ok &= s_USER_testCrc();
     ok &= s_USER_testBuildFrameCrc();
     ok &= s_USER_testReportSplitFeed();
+    ok &= s_USER_testReportFieldOrder();
     ok &= s_USER_testDebugSnapshot();
     ok &= s_USER_testReadTemp2();
     ok &= s_USER_testWriteCommitAndRollback();
     ok &= s_USER_testReadLengthError();
+    ok &= s_USER_testStreamStartStopAndSchedule();
 
     if (ok)
     {

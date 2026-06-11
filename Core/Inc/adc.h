@@ -50,7 +50,6 @@ void MX_ADC3_Init(void);
 void MX_ADC5_Init(void);
 
 /* USER CODE BEGIN Prototypes */
-void ADC_updateAppPowerInjectedRaw(void);
 void ADC_pollAppPowerAuxRaw(void);
 
 /* USER CODE END Prototypes */

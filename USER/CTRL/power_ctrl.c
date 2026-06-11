@@ -7,6 +7,8 @@
 #include <string.h>
 #include "adc.h"
 #include "hrtim.h"
+#include "main.h"
+#include "tim.h"
 
 #define POWER_CTRL_DEFAULT_SET_VOLTAGE_MV       5000U
 #define POWER_CTRL_DEFAULT_SET_CURRENT_MA       10000U
@@ -16,11 +18,11 @@
 
 #define POWER_CTRL_VIN_UVLO_START_MV            5500U
 #define POWER_CTRL_VIN_UVLO_STOP_MV             5200U
+#define POWER_CTRL_VIN_OVP_MV                   50000U
 #define POWER_CTRL_SHORT_CURRENT_MA             10100U
 #define POWER_CTRL_SHORT_VOLTAGE_MV             500U
 #define POWER_CTRL_WAIT_TICK_COUNT              200U
 #define POWER_CTRL_SOFTSTART_WAIT_TICK_COUNT    5U
-#define POWER_CTRL_SOFTSTART_RAMP_TICK_COUNT    200U
 #define POWER_CTRL_OVP_HOLD_TICK_COUNT          2U
 #define POWER_CTRL_OCP_HOLD_TICK_COUNT          10U
 #define POWER_CTRL_FAULT_RETRY_TICK_COUNT       400U
@@ -30,6 +32,10 @@
 #define POWER_CTRL_SLOW_LOOP_HZ                 200U
 #define POWER_CTRL_SLOW_LOOP_DIVIDER            (POWER_CTRL_FAST_LOOP_HZ / POWER_CTRL_SLOW_LOOP_HZ)
 
+/*
+ * Re-discretized from the reference project for the current 200 kHz HRTIM
+ * period (27200 ticks @ 5.44 GHz equivalent HRTIM clock).
+ */
 #define POWER_CTRL_BUCK_PID_B0                  5795
 #define POWER_CTRL_BUCK_PID_B1                 -11411
 #define POWER_CTRL_BUCK_PID_B2                  5617
@@ -42,10 +48,7 @@
 #define POWER_CTRL_CURRENT_LOOP_KD              1
 #define POWER_CTRL_BUCK_LIGHT_LOAD_ENTER_RAW    70
 #define POWER_CTRL_BUCK_LIGHT_LOAD_EXIT_RAW     175
-#define POWER_CTRL_BUCK_ENTER_RATIO             0.85F
-#define POWER_CTRL_BUCK_EXIT_RATIO              0.90F
-#define POWER_CTRL_BOOST_ENTER_RATIO            1.15F
-#define POWER_CTRL_BOOST_EXIT_RATIO             1.10F
+#define POWER_CTRL_FAN_AUTO_MAX_PERMILLE        1000U
 
 typedef enum
 {
@@ -109,6 +112,7 @@ static uint8_t s_POWER_pwmEnabled = 0U;
 static uint8_t s_POWER_adcAverageInitialized = 0U;
 static uint8_t s_POWER_vinUvLocked = 1U;
 static uint8_t s_POWER_buckLightLoad = 0U;
+static uint32_t s_POWER_fanSpeedPermille = 0U;
 
 static int32_t s_POWER_v_err0 = 0;
 static int32_t s_POWER_v_err1 = 0;
@@ -120,6 +124,18 @@ static int32_t s_POWER_u1 = 0;
 static int32_t s_POWER_i0 = 0;
 static int32_t s_POWER_currentIntegral = 0;
 static uint16_t s_POWER_slowLoopDivider = 0U;
+static uint16_t s_POWER_ovpCount = 0U;
+static uint16_t s_POWER_ocpCount = 0U;
+static uint16_t s_POWER_shortRetryCount = 0U;
+static uint16_t s_POWER_ocpRetryCount = 0U;
+static uint8_t s_POWER_shortRetryNum = 0U;
+static uint8_t s_POWER_ocpRetryNum = 0U;
+static uint32_t s_POWER_modeVinSum = 0U;
+static uint8_t s_POWER_modeVinCount = 0U;
+static uint16_t s_POWER_waitCount = 0U;
+static uint16_t s_POWER_softstartWaitCount = 0U;
+static uint16_t s_POWER_buckMaxDutyCount = 0U;
+static uint16_t s_POWER_boostMaxDutyCount = 0U;
 
 static uint32_t s_POWER_getAppU32Nonnegative(float value, float scale)
 {
@@ -147,7 +163,12 @@ static int32_t s_POWER_getAppI32(float value, float scale)
 
 static uint8_t s_POWER_getAppStateFlagBits(void)
 {
-    if (s_POWER_vinUvLocked != 0U)
+    if (s_POWER_state == POWER_STATE_ERR)
+    {
+        return POWER_CTRL_STATE_FLAG_ERR;
+    }
+
+    if ((s_POWER_vinUvLocked != 0U) && (s_POWER_ctrlFaultFlags == POWER_CTRL_FAULT_NONE))
     {
         return POWER_CTRL_STATE_FLAG_WAIT;
     }
@@ -206,6 +227,13 @@ static uint16_t s_POWER_getAppIoutRawFromMilliamps(uint32_t ma)
     return s_POWER_getAppClampU16((uint32_t)(raw + 0.5F));
 }
 
+static uint32_t s_POWER_getAppMillivoltsFromVoutRaw(int32_t raw)
+{
+    const float adc_v = ((float)raw * BSP_POWER_ADC_VREF_V) / BSP_POWER_ADC1_FULL_SCALE_RAW;
+    const float vout_v = adc_v * BSP_POWER_VOUT_SENSE_SCALE;
+    return s_POWER_getAppU32Nonnegative(vout_v, 1000.0F);
+}
+
 static uint16_t s_POWER_getAppForwardCurrentRaw(uint16_t raw)
 {
     const float bias_raw_float = (BSP_POWER_CURRENT_BIAS_V * BSP_POWER_ADC1_FULL_SCALE_RAW) / BSP_POWER_ADC_VREF_V;
@@ -219,22 +247,59 @@ static uint16_t s_POWER_getAppForwardCurrentRaw(uint16_t raw)
     return (uint16_t)(bias_raw - raw);
 }
 
-static void s_POWER_setAppBuckLightLoad(uint8_t enabled)
+static uint16_t s_POWER_getAppInnerCurrentRaw(const BSP_adcResult_t *adc_result, uint8_t stage_mode)
 {
-    const uint8_t new_state = (enabled != 0U) ? 1U : 0U;
-
-    if (s_POWER_buckLightLoad == new_state)
+    if (adc_result == NULL)
     {
-        return;
+        return 0U;
     }
 
-    s_POWER_buckLightLoad = new_state;
+    switch (stage_mode)
+    {
+        case POWER_CTRL_STAGE_BUCK:
+            return s_POWER_getAppForwardCurrentRaw(adc_result->iout_raw);
+
+        case POWER_CTRL_STAGE_BOOST:
+        case POWER_CTRL_STAGE_MIX:
+        default:
+            return s_POWER_getAppForwardCurrentRaw(adc_result->iin_raw);
+    }
 }
 
-static uint16_t s_POWER_getAppCalibratedRaw(uint16_t raw, uint32_t k, uint32_t b)
+static BSP_powerStageMode_t s_POWER_getAppBspStageMode(uint8_t stage_mode)
 {
-    uint32_t calibrated = (((uint32_t)raw * k) >> 12) + b;
-    return s_POWER_getAppClampU16(calibrated);
+    switch (stage_mode)
+    {
+        case POWER_CTRL_STAGE_BUCK:
+            return BSP_POWER_STAGE_MODE_BUCK;
+
+        case POWER_CTRL_STAGE_BOOST:
+            return BSP_POWER_STAGE_MODE_BOOST;
+
+        case POWER_CTRL_STAGE_MIX:
+        default:
+            return BSP_POWER_STAGE_MODE_MIXED;
+    }
+}
+
+static void s_POWER_setAppBuckLightLoad(uint8_t enabled)
+{
+    s_POWER_buckLightLoad = (enabled != 0U) ? 1U : 0U;
+}
+
+static uint32_t s_POWER_getAppDutyCmdTick(void)
+{
+    switch (s_POWER_ctrlStageMode)
+    {
+        case POWER_CTRL_STAGE_BOOST:
+        case POWER_CTRL_STAGE_MIX:
+            return (uint32_t)s_POWER_controlValue.boost_duty_tick;
+
+        case POWER_CTRL_STAGE_BUCK:
+        case POWER_CTRL_STAGE_NA:
+        default:
+            return (uint32_t)s_POWER_controlValue.buck_duty_tick;
+    }
 }
 
 static void s_POWER_resetAppPid(void)
@@ -251,12 +316,29 @@ static void s_POWER_resetAppPid(void)
     s_POWER_setAppBuckLightLoad(0U);
 }
 
+static void s_POWER_resetAppCounters(void)
+{
+    s_POWER_slowLoopDivider = 0U;
+    s_POWER_ovpCount = 0U;
+    s_POWER_ocpCount = 0U;
+    s_POWER_shortRetryCount = 0U;
+    s_POWER_ocpRetryCount = 0U;
+    s_POWER_shortRetryNum = 0U;
+    s_POWER_ocpRetryNum = 0U;
+    s_POWER_modeVinSum = 0U;
+    s_POWER_modeVinCount = 0U;
+    s_POWER_waitCount = 0U;
+    s_POWER_softstartWaitCount = 0U;
+    s_POWER_buckMaxDutyCount = 0U;
+    s_POWER_boostMaxDutyCount = 0U;
+}
+
 static void s_POWER_stopAppPwm(void)
 {
     s_POWER_pwmEnabled = 0U;
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
-    s_POWER_buckLightLoad = 0U;
+    s_POWER_setAppBuckLightLoad(0U);
 }
 
 static void s_POWER_startAppPwm(void)
@@ -266,7 +348,7 @@ static void s_POWER_startAppPwm(void)
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
     HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
     s_POWER_pwmEnabled = 1U;
-    s_POWER_buckLightLoad = 0U;
+    s_POWER_setAppBuckLightLoad(0U);
 }
 
 static void s_POWER_updateAppReferences(void)
@@ -275,28 +357,96 @@ static void s_POWER_updateAppReferences(void)
     s_POWER_controlValue.iout_ref_raw = s_POWER_getAppIoutRawFromMilliamps(s_POWER_ctrlSettings.set_current_ma);
 }
 
-static void s_POWER_stepAppSoftstartRef(void)
+static void s_POWER_setAppFan(uint32_t fan_permille)
 {
-    const int32_t target_ref_raw = s_POWER_controlValue.vout_set_ref_raw;
-    int32_t step_raw = target_ref_raw / (int32_t)POWER_CTRL_SOFTSTART_RAMP_TICK_COUNT;
+    uint32_t compare;
 
-    if (step_raw < 1)
+    if (fan_permille > 1000U)
     {
-        step_raw = 1;
+        fan_permille = 1000U;
     }
 
-    if (s_POWER_controlValue.vout_softstart_ref_raw < target_ref_raw)
+    compare = ((uint32_t)(__HAL_TIM_GET_AUTORELOAD(&htim8) + 1U) * fan_permille) / 1000U;
+    __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_3, compare);
+    s_POWER_fanSpeedPermille = fan_permille;
+}
+
+static void s_POWER_updateAppFan(void)
+{
+    uint32_t fan_permille;
+    const float board_temp_c = s_POWER_sample.measurement.temp1_c;
+
+    if (s_POWER_ctrlSettings.fan_set_permille != 0U)
     {
-        s_POWER_controlValue.vout_softstart_ref_raw += step_raw;
-        if (s_POWER_controlValue.vout_softstart_ref_raw > target_ref_raw)
-        {
-            s_POWER_controlValue.vout_softstart_ref_raw = target_ref_raw;
-        }
+        s_POWER_setAppFan(s_POWER_ctrlSettings.fan_set_permille);
+        return;
     }
-    else if (s_POWER_controlValue.vout_softstart_ref_raw > target_ref_raw)
+
+    if (board_temp_c < 35.0F)
     {
-        s_POWER_controlValue.vout_softstart_ref_raw = target_ref_raw;
+        fan_permille = 0U;
     }
+    else if (board_temp_c < 40.0F)
+    {
+        fan_permille = 350U;
+    }
+    else if (board_temp_c < 45.0F)
+    {
+        fan_permille = 450U;
+    }
+    else if (board_temp_c < 50.0F)
+    {
+        fan_permille = 600U;
+    }
+    else if (board_temp_c < 55.0F)
+    {
+        fan_permille = 700U;
+    }
+    else if (board_temp_c < 60.0F)
+    {
+        fan_permille = 800U;
+    }
+    else if (board_temp_c < 65.0F)
+    {
+        fan_permille = 900U;
+    }
+    else
+    {
+        fan_permille = POWER_CTRL_FAN_AUTO_MAX_PERMILLE;
+    }
+
+    s_POWER_setAppFan(fan_permille);
+}
+
+static void s_POWER_updateAppStatusLed(void)
+{
+    if (s_POWER_ctrlFaultFlags != POWER_CTRL_FAULT_NONE)
+    {
+        HAL_GPIO_WritePin(RED_GPIO_Port, RED_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GREEN_GPIO_Port, GREEN_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(BLUE_GPIO_Port, BLUE_Pin, GPIO_PIN_RESET);
+        return;
+    }
+
+    if (s_POWER_state == POWER_STATE_RUN)
+    {
+        HAL_GPIO_WritePin(RED_GPIO_Port, RED_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GREEN_GPIO_Port, GREEN_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(BLUE_GPIO_Port, BLUE_Pin, GPIO_PIN_RESET);
+        return;
+    }
+
+    if ((s_POWER_state == POWER_STATE_RISE) || (s_POWER_vinUvLocked != 0U))
+    {
+        HAL_GPIO_WritePin(RED_GPIO_Port, RED_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GREEN_GPIO_Port, GREEN_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(BLUE_GPIO_Port, BLUE_Pin, GPIO_PIN_SET);
+        return;
+    }
+
+    HAL_GPIO_WritePin(RED_GPIO_Port, RED_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GREEN_GPIO_Port, GREEN_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(BLUE_GPIO_Port, BLUE_Pin, GPIO_PIN_RESET);
 }
 
 static void s_POWER_sampleAppAdc(void)
@@ -359,6 +509,9 @@ static void s_POWER_enterAppFault(uint32_t fault)
     s_POWER_ctrlFaultFlags |= fault;
     s_POWER_stopAppPwm();
     s_POWER_ctrlStageMode = POWER_CTRL_STAGE_NA;
+    s_POWER_softstartState = POWER_SOFTSTART_INIT;
+    s_POWER_controlValue.vout_softstart_ref_raw = 0;
+    s_POWER_resetAppPid();
     s_POWER_state = POWER_STATE_ERR;
 }
 
@@ -371,45 +524,35 @@ static void s_POWER_updateAppVinUvLock(void)
         if (vin_mv >= POWER_CTRL_VIN_UVLO_START_MV)
         {
             s_POWER_vinUvLocked = 0U;
-            s_POWER_ctrlFaultFlags &= ~POWER_CTRL_FAULT_VIN_UVP;
             return;
         }
     }
     else if (vin_mv > POWER_CTRL_VIN_UVLO_STOP_MV)
     {
-        s_POWER_ctrlFaultFlags &= ~POWER_CTRL_FAULT_VIN_UVP;
         return;
     }
 
     s_POWER_vinUvLocked = 1U;
-    s_POWER_ctrlFaultFlags |= POWER_CTRL_FAULT_VIN_UVP;
-    s_POWER_stopAppPwm();
-    s_POWER_ctrlStageMode = POWER_CTRL_STAGE_NA;
-    s_POWER_softstartState = POWER_SOFTSTART_INIT;
-    s_POWER_controlValue.vout_softstart_ref_raw = 0;
-    s_POWER_resetAppPid();
-
-    if ((s_POWER_state == POWER_STATE_INIT) ||
-        (s_POWER_state == POWER_STATE_RISE) ||
-        (s_POWER_state == POWER_STATE_RUN))
-    {
-        s_POWER_state = POWER_STATE_WAIT;
-    }
+    s_POWER_enterAppFault(POWER_CTRL_FAULT_VIN_UVP);
 }
 
 static void s_POWER_checkAppProtection(void)
 {
-    static uint16_t ovp_count = 0U;
-    static uint16_t ocp_count = 0U;
-
     const uint32_t vout_mv = s_POWER_getAppU32Nonnegative(s_POWER_sample.measurement.vout_v, 1000.0F);
     const uint32_t iout_ma = s_POWER_getAppU32Nonnegative(s_POWER_sample.measurement.iout_a, 1000.0F);
+    const uint32_t vin_mv = s_POWER_getAppU32Nonnegative(s_POWER_sample.measurement.vin_v, 1000.0F);
     const int32_t board_temp_mc = s_POWER_getAppI32(s_POWER_sample.measurement.temp1_c, 1000.0F);
 
     if (s_POWER_vinUvLocked != 0U)
     {
-        ovp_count = 0U;
-        ocp_count = 0U;
+        s_POWER_ovpCount = 0U;
+        s_POWER_ocpCount = 0U;
+        return;
+    }
+
+    if (vin_mv >= POWER_CTRL_VIN_OVP_MV)
+    {
+        s_POWER_enterAppFault(POWER_CTRL_FAULT_VIN_OVP);
         return;
     }
 
@@ -427,39 +570,92 @@ static void s_POWER_checkAppProtection(void)
 
     if (vout_mv >= s_POWER_ctrlSettings.ovp_set_mv)
     {
-        ++ovp_count;
-        if (ovp_count > POWER_CTRL_OVP_HOLD_TICK_COUNT)
+        ++s_POWER_ovpCount;
+        if (s_POWER_ovpCount > POWER_CTRL_OVP_HOLD_TICK_COUNT)
         {
-            ovp_count = 0U;
+            s_POWER_ovpCount = 0U;
             s_POWER_enterAppFault(POWER_CTRL_FAULT_VOUT_OVP);
             return;
         }
     }
     else
     {
-        ovp_count = 0U;
+        s_POWER_ovpCount = 0U;
     }
 
     if ((iout_ma >= s_POWER_ctrlSettings.ocp_set_ma) && (s_POWER_state == POWER_STATE_RUN))
     {
-        ++ocp_count;
-        if (ocp_count > POWER_CTRL_OCP_HOLD_TICK_COUNT)
+        ++s_POWER_ocpCount;
+        if (s_POWER_ocpCount > POWER_CTRL_OCP_HOLD_TICK_COUNT)
         {
-            ocp_count = 0U;
+            s_POWER_ocpCount = 0U;
             s_POWER_enterAppFault(POWER_CTRL_FAULT_IOUT_OCP);
             return;
         }
     }
     else
     {
-        ocp_count = 0U;
+        s_POWER_ocpCount = 0U;
+    }
+}
+
+static void s_POWER_updateAppFaultRecovery(void)
+{
+    if ((s_POWER_ctrlFaultFlags & POWER_CTRL_FAULT_VIN_UVP) != 0U)
+    {
+        if (s_POWER_vinUvLocked == 0U)
+        {
+            s_POWER_ctrlFaultFlags &= ~POWER_CTRL_FAULT_VIN_UVP;
+        }
+    }
+
+    if ((s_POWER_ctrlFaultFlags & POWER_CTRL_FAULT_SHORT) != 0U)
+    {
+        ++s_POWER_shortRetryCount;
+        if (s_POWER_shortRetryCount > POWER_CTRL_FAULT_RETRY_TICK_COUNT)
+        {
+            s_POWER_shortRetryCount = 0U;
+            if (s_POWER_shortRetryNum <= POWER_CTRL_FAULT_RETRY_LIMIT)
+            {
+                ++s_POWER_shortRetryNum;
+                s_POWER_ctrlFaultFlags &= ~POWER_CTRL_FAULT_SHORT;
+            }
+            else
+            {
+                s_POWER_shortRetryNum = (uint8_t)(POWER_CTRL_FAULT_RETRY_LIMIT + 1U);
+            }
+        }
+    }
+    else
+    {
+        s_POWER_shortRetryCount = 0U;
+    }
+
+    if ((s_POWER_ctrlFaultFlags & POWER_CTRL_FAULT_IOUT_OCP) != 0U)
+    {
+        ++s_POWER_ocpRetryCount;
+        if (s_POWER_ocpRetryCount > POWER_CTRL_FAULT_RETRY_TICK_COUNT)
+        {
+            s_POWER_ocpRetryCount = 0U;
+            if (s_POWER_ocpRetryNum <= POWER_CTRL_FAULT_RETRY_LIMIT)
+            {
+                ++s_POWER_ocpRetryNum;
+                s_POWER_ctrlFaultFlags &= ~POWER_CTRL_FAULT_IOUT_OCP;
+            }
+            else
+            {
+                s_POWER_ocpRetryNum = (uint8_t)(POWER_CTRL_FAULT_RETRY_LIMIT + 1U);
+            }
+        }
+    }
+    else
+    {
+        s_POWER_ocpRetryCount = 0U;
     }
 }
 
 static void s_POWER_updateAppMode(void)
 {
-    static uint32_t vin_sum = 0U;
-    static uint8_t vin_count = 0U;
     uint16_t vin_raw = s_POWER_sample.vin_raw_avg;
     uint8_t previous_mode = s_POWER_ctrlStageMode;
 
@@ -470,23 +666,23 @@ static void s_POWER_updateAppMode(void)
         return;
     }
 
-    vin_sum += s_POWER_sample.vin_raw_avg;
-    ++vin_count;
-    if (vin_count >= POWER_CTRL_MODE_AVG_COUNT)
+    s_POWER_modeVinSum += s_POWER_sample.vin_raw_avg;
+    ++s_POWER_modeVinCount;
+    if (s_POWER_modeVinCount >= POWER_CTRL_MODE_AVG_COUNT)
     {
-        vin_raw = (uint16_t)(vin_sum / POWER_CTRL_MODE_AVG_COUNT);
-        vin_sum = 0U;
-        vin_count = 0U;
+        vin_raw = (uint16_t)(s_POWER_modeVinSum / POWER_CTRL_MODE_AVG_COUNT);
+        s_POWER_modeVinSum = 0U;
+        s_POWER_modeVinCount = 0U;
     }
 
     switch (s_POWER_ctrlStageMode)
     {
         case POWER_CTRL_STAGE_NA:
-            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BUCK_ENTER_RATIO))
+            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 0.8F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BUCK;
             }
-            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BOOST_ENTER_RATIO))
+            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 1.2F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BOOST;
             }
@@ -497,22 +693,22 @@ static void s_POWER_updateAppMode(void)
             break;
 
         case POWER_CTRL_STAGE_BUCK:
-            if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BOOST_ENTER_RATIO))
+            if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 1.2F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BOOST;
             }
-            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BUCK_EXIT_RATIO))
+            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 0.85F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_MIX;
             }
             break;
 
         case POWER_CTRL_STAGE_BOOST:
-            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BUCK_ENTER_RATIO))
+            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 0.8F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BUCK;
             }
-            else if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BOOST_EXIT_RATIO))
+            else if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 1.15F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_MIX;
             }
@@ -520,11 +716,11 @@ static void s_POWER_updateAppMode(void)
 
         case POWER_CTRL_STAGE_MIX:
         default:
-            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * POWER_CTRL_BUCK_ENTER_RATIO))
+            if (s_POWER_controlValue.vout_ref_raw < (int32_t)((float)vin_raw * 0.8F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BUCK;
             }
-            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * POWER_CTRL_BOOST_ENTER_RATIO))
+            else if (s_POWER_controlValue.vout_ref_raw > (int32_t)((float)vin_raw * 1.2F))
             {
                 s_POWER_ctrlStageMode = POWER_CTRL_STAGE_BOOST;
             }
@@ -537,8 +733,9 @@ static void s_POWER_updateAppMode(void)
 static void s_POWER_runAppPid(void)
 {
     const int32_t vout_temp = s_POWER_fastAdcResult.vout_raw;
-    const int32_t iout_temp = s_POWER_getAppForwardCurrentRaw(s_POWER_fastAdcResult.iout_raw);
-    const int32_t active_vout_limit_raw = (s_POWER_state == POWER_STATE_RISE)
+    const int32_t iout_temp = s_POWER_getAppInnerCurrentRaw(&s_POWER_fastAdcResult, s_POWER_ctrlStageMode);
+    const int32_t active_vout_limit_raw = ((s_POWER_state == POWER_STATE_RISE) &&
+                                           (vout_temp < (s_POWER_controlValue.vout_set_ref_raw >> 1)))
                                               ? s_POWER_controlValue.vout_softstart_ref_raw
                                               : s_POWER_controlValue.vout_set_ref_raw;
 
@@ -667,13 +864,6 @@ static void s_POWER_runAppPid(void)
 
 static void s_POWER_handleAppState(void)
 {
-    static uint16_t wait_count = 0U;
-    static uint16_t softstart_wait_count = 0U;
-    static uint16_t buck_max_duty_count = 0U;
-    static uint16_t boost_max_duty_count = 0U;
-    static uint16_t fault_retry_count = 0U;
-    static uint8_t fault_retry_num = 0U;
-
     switch (s_POWER_state)
     {
         case POWER_STATE_INIT:
@@ -685,11 +875,11 @@ static void s_POWER_handleAppState(void)
             s_POWER_stopAppPwm();
             if (s_POWER_ctrlEnabled == 0U)
             {
-                wait_count = 0U;
+                s_POWER_waitCount = 0U;
                 break;
             }
 
-            if ((s_POWER_ctrlFaultFlags & ~POWER_CTRL_FAULT_VIN_UVP) != POWER_CTRL_FAULT_NONE)
+            if (s_POWER_ctrlFaultFlags != POWER_CTRL_FAULT_NONE)
             {
                 s_POWER_state = POWER_STATE_ERR;
                 break;
@@ -697,16 +887,16 @@ static void s_POWER_handleAppState(void)
 
             if (s_POWER_vinUvLocked != 0U)
             {
-                wait_count = 0U;
+                s_POWER_waitCount = 0U;
                 break;
             }
 
-            ++wait_count;
-            if (wait_count > POWER_CTRL_WAIT_TICK_COUNT)
+            ++s_POWER_waitCount;
+            if (s_POWER_waitCount > POWER_CTRL_WAIT_TICK_COUNT)
             {
-                wait_count = 0U;
-                buck_max_duty_count = 0U;
-                boost_max_duty_count = 0U;
+                s_POWER_waitCount = 0U;
+                s_POWER_buckMaxDutyCount = 0U;
+                s_POWER_boostMaxDutyCount = 0U;
                 s_POWER_softstartState = POWER_SOFTSTART_INIT;
                 s_POWER_state = POWER_STATE_RISE;
             }
@@ -721,48 +911,45 @@ static void s_POWER_handleAppState(void)
                     s_POWER_controlValue.boost_max_duty_tick = BSP_POWER_BOOST_DUTY_MIN_TICK;
                     s_POWER_resetAppPid();
                     s_POWER_updateAppReferences();
-                    s_POWER_controlValue.vout_softstart_ref_raw = 0;
+                    s_POWER_controlValue.vout_softstart_ref_raw = s_POWER_controlValue.vout_set_ref_raw >> 1;
                     s_POWER_softstartState = POWER_SOFTSTART_WAIT;
                     break;
 
                 case POWER_SOFTSTART_WAIT:
-                    ++softstart_wait_count;
-                    if (softstart_wait_count > POWER_CTRL_SOFTSTART_WAIT_TICK_COUNT)
+                    ++s_POWER_softstartWaitCount;
+                    if (s_POWER_softstartWaitCount > POWER_CTRL_SOFTSTART_WAIT_TICK_COUNT)
                     {
-                        softstart_wait_count = 0U;
+                        s_POWER_softstartWaitCount = 0U;
                         s_POWER_controlValue.buck_duty_tick = BSP_POWER_BUCK_DUTY_MIN_TICK;
                         s_POWER_controlValue.buck_max_duty_tick = BSP_POWER_BUCK_DUTY_MIN_TICK;
                         s_POWER_controlValue.boost_duty_tick = BSP_POWER_BOOST_DUTY_MIN_TICK;
                         s_POWER_controlValue.boost_max_duty_tick = BSP_POWER_BOOST_DUTY_MIN_TICK;
                         s_POWER_resetAppPid();
-                        s_POWER_controlValue.vout_softstart_ref_raw = 0;
+                        s_POWER_controlValue.vout_softstart_ref_raw = s_POWER_controlValue.vout_set_ref_raw >> 1;
                         s_POWER_softstartState = POWER_SOFTSTART_RUN;
                     }
                     break;
 
                 case POWER_SOFTSTART_RUN:
                 default:
-                    s_POWER_stepAppSoftstartRef();
-
                     if (s_POWER_pwmEnabled == 0U)
                     {
                         s_POWER_resetAppPid();
                         s_POWER_startAppPwm();
                     }
 
-                    ++buck_max_duty_count;
-                    ++boost_max_duty_count;
+                    ++s_POWER_buckMaxDutyCount;
+                    ++s_POWER_boostMaxDutyCount;
                     s_POWER_controlValue.buck_max_duty_tick = s_POWER_getAppClampDuty(
-                        s_POWER_controlValue.buck_max_duty_tick + ((int32_t)buck_max_duty_count * 15),
+                        s_POWER_controlValue.buck_max_duty_tick + ((int32_t)s_POWER_buckMaxDutyCount * 15),
                         BSP_POWER_BUCK_DUTY_MIN_TICK,
                         BSP_POWER_BUCK_DUTY_MAX_TICK);
                     s_POWER_controlValue.boost_max_duty_tick = s_POWER_getAppClampDuty(
-                        s_POWER_controlValue.boost_max_duty_tick + ((int32_t)boost_max_duty_count * 15),
+                        s_POWER_controlValue.boost_max_duty_tick + ((int32_t)s_POWER_boostMaxDutyCount * 15),
                         BSP_POWER_BOOST_DUTY_MIN_TICK,
                         BSP_POWER_BOOST_DUTY_MAX_TICK);
 
-                    if ((s_POWER_controlValue.vout_softstart_ref_raw >= s_POWER_controlValue.vout_set_ref_raw) &&
-                        ((uint32_t)s_POWER_controlValue.buck_max_duty_tick == BSP_POWER_BUCK_DUTY_MAX_TICK) &&
+                    if (((uint32_t)s_POWER_controlValue.buck_max_duty_tick == BSP_POWER_BUCK_DUTY_MAX_TICK) &&
                         ((uint32_t)s_POWER_controlValue.boost_max_duty_tick == BSP_POWER_BOOST_DUTY_MAX_TICK))
                     {
                         s_POWER_softstartState = POWER_SOFTSTART_INIT;
@@ -783,36 +970,9 @@ static void s_POWER_handleAppState(void)
         default:
             s_POWER_stopAppPwm();
             s_POWER_ctrlStageMode = POWER_CTRL_STAGE_NA;
-
-            if ((s_POWER_ctrlFaultFlags == POWER_CTRL_FAULT_VIN_UVP) && (s_POWER_vinUvLocked == 0U))
-            {
-                s_POWER_ctrlFaultFlags = POWER_CTRL_FAULT_NONE;
-                s_POWER_state = POWER_STATE_WAIT;
-                break;
-            }
-
-            if ((s_POWER_ctrlFaultFlags == POWER_CTRL_FAULT_NONE) && (s_POWER_ctrlEnabled != 0U))
+            if (s_POWER_ctrlFaultFlags == POWER_CTRL_FAULT_NONE)
             {
                 s_POWER_state = POWER_STATE_WAIT;
-                break;
-            }
-
-            if ((s_POWER_ctrlFaultFlags & (POWER_CTRL_FAULT_SHORT | POWER_CTRL_FAULT_IOUT_OCP)) != 0U)
-            {
-                ++fault_retry_count;
-                if (fault_retry_count > POWER_CTRL_FAULT_RETRY_TICK_COUNT)
-                {
-                    fault_retry_count = 0U;
-                    ++fault_retry_num;
-                    if (fault_retry_num <= POWER_CTRL_FAULT_RETRY_LIMIT)
-                    {
-                        s_POWER_ctrlFaultFlags &= ~(POWER_CTRL_FAULT_SHORT | POWER_CTRL_FAULT_IOUT_OCP);
-                    }
-                    else
-                    {
-                        fault_retry_num = POWER_CTRL_FAULT_RETRY_LIMIT + 1U;
-                    }
-                }
             }
             break;
     }
@@ -829,12 +989,14 @@ void POWER_initAppCtrl(void)
     s_POWER_ctrlSettings.ovp_set_mv = POWER_CTRL_DEFAULT_OVP_SET_MV;
     s_POWER_ctrlSettings.ocp_set_ma = POWER_CTRL_DEFAULT_OCP_SET_MA;
     s_POWER_ctrlSettings.fan_set_permille = 0U;
+    s_POWER_setAppFan(s_POWER_ctrlSettings.fan_set_permille);
     s_POWER_ctrlEnabled = 0U;
     s_POWER_state = POWER_STATE_INIT;
     s_POWER_softstartState = POWER_SOFTSTART_INIT;
     s_POWER_ctrlCvccMode = POWER_CTRL_CVCC_CV;
     s_POWER_adcAverageInitialized = 0U;
     s_POWER_vinUvLocked = 1U;
+    s_POWER_resetAppCounters();
     s_POWER_initAppValues();
 }
 
@@ -842,6 +1004,7 @@ void POWER_getAppSnapshot(POWER_ctrlSnapshot_t *snapshot)
 {
     BSP_adcResult_t adc_result;
     BSP_powerMeasurement_t measurement;
+    float inner_current_a = 0.0F;
 
     if (snapshot == NULL)
     {
@@ -883,17 +1046,21 @@ void POWER_getAppSnapshot(POWER_ctrlSnapshot_t *snapshot)
     snapshot->stage_mode = (s_POWER_vinUvLocked != 0U) ? POWER_CTRL_STAGE_NA : s_POWER_ctrlStageMode;
     snapshot->cvcc_mode = s_POWER_ctrlCvccMode;
 
-    snapshot->otp_value_mc = s_POWER_ctrlSettings.otp_set_mc;
-    snapshot->ovp_value_mv = s_POWER_ctrlSettings.ovp_set_mv;
-    snapshot->ocp_value_ma = s_POWER_ctrlSettings.ocp_set_ma;
+    snapshot->otp_value_mc = snapshot->board_temperature_mc;
+    snapshot->ovp_value_mv = snapshot->output_voltage_mv;
+    snapshot->ocp_value_ma = snapshot->output_current_ma;
 
-    snapshot->duty_cmd = (uint32_t)s_POWER_controlValue.buck_duty_tick;
+    snapshot->duty_cmd = s_POWER_getAppDutyCmdTick();
     snapshot->pwm_a_compare = __HAL_HRTIM_GETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1);
     snapshot->pwm_d_compare = __HAL_HRTIM_GETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1);
-    snapshot->fan_speed_permille = s_POWER_ctrlSettings.fan_set_permille;
-    snapshot->loop_current_feedback_ma = snapshot->output_current_ma;
+    snapshot->fan_speed_permille = s_POWER_fanSpeedPermille;
+    if (snapshot->stage_mode != POWER_CTRL_STAGE_NA)
+    {
+        inner_current_a = BSP_getAppInnerCurrentA(&measurement, s_POWER_getAppBspStageMode(snapshot->stage_mode));
+    }
+    snapshot->loop_current_feedback_ma = s_POWER_getAppU32Nonnegative(inner_current_a, 1000.0F);
     snapshot->loop_current_reference_ma = s_POWER_ctrlSettings.set_current_ma;
-    snapshot->voltage_loop_reference_mv = s_POWER_ctrlSettings.set_voltage_mv;
+    snapshot->voltage_loop_reference_mv = s_POWER_getAppMillivoltsFromVoutRaw(s_POWER_controlValue.vout_ref_raw);
 }
 
 void POWER_applyAppSettings(const POWER_ctrlSettings_t *settings)
@@ -904,18 +1071,32 @@ void POWER_applyAppSettings(const POWER_ctrlSettings_t *settings)
     }
 
     s_POWER_ctrlSettings = *settings;
+    if (s_POWER_ctrlSettings.fan_set_permille > 1000U)
+    {
+        s_POWER_ctrlSettings.fan_set_permille = 1000U;
+    }
     s_POWER_updateAppReferences();
+    s_POWER_setAppFan(s_POWER_ctrlSettings.fan_set_permille);
 }
 
 void POWER_setAppEnabled(uint8_t enabled)
 {
-    s_POWER_ctrlEnabled = (enabled != 0U) ? 1U : 0U;
-
-    if (s_POWER_ctrlEnabled == 0U)
+    if (enabled != 0U)
     {
-        s_POWER_state = POWER_STATE_WAIT;
-        s_POWER_stopAppPwm();
+        s_POWER_ctrlEnabled = 1U;
+        s_POWER_softstartState = POWER_SOFTSTART_INIT;
+
+        if (s_POWER_ctrlFaultFlags == POWER_CTRL_FAULT_NONE)
+        {
+            s_POWER_state = POWER_STATE_WAIT;
+            s_POWER_resetAppPid();
+        }
+        return;
     }
+
+    s_POWER_ctrlEnabled = 0U;
+    s_POWER_state = POWER_STATE_WAIT;
+    s_POWER_stopAppPwm();
 }
 
 void POWER_runAppControlTick(void)
@@ -929,8 +1110,11 @@ void POWER_runAppControlTick(void)
         s_POWER_sampleAppAdc();
         s_POWER_updateAppVinUvLock();
         s_POWER_checkAppProtection();
+        s_POWER_updateAppFaultRecovery();
         s_POWER_handleAppState();
         s_POWER_updateAppMode();
+        s_POWER_updateAppFan();
+        s_POWER_updateAppStatusLed();
     }
 
     s_POWER_runAppPid();

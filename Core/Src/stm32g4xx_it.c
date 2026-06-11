@@ -58,9 +58,10 @@
 /* External variables --------------------------------------------------------*/
 extern PCD_HandleTypeDef hpcd_USB_FS;
 extern DMA_HandleTypeDef hdma_adc1;
-extern ADC_HandleTypeDef hadc1;
-extern ADC_HandleTypeDef hadc2;
 extern HRTIM_HandleTypeDef hhrtim1;
+extern TIM_HandleTypeDef htim6;
+extern TIM_HandleTypeDef htim7;
+extern TIM_HandleTypeDef htim16;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -218,21 +219,6 @@ void DMA1_Channel1_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles ADC1 and ADC2 global interrupt.
-  */
-void ADC1_2_IRQHandler(void)
-{
-  /* USER CODE BEGIN ADC1_2_IRQn 0 */
-
-  /* USER CODE END ADC1_2_IRQn 0 */
-  HAL_ADC_IRQHandler(&hadc1);
-  HAL_ADC_IRQHandler(&hadc2);
-  /* USER CODE BEGIN ADC1_2_IRQn 1 */
-
-  /* USER CODE END ADC1_2_IRQn 1 */
-}
-
-/**
   * @brief This function handles USB low priority interrupt remap.
   */
 void USB_LP_IRQHandler(void)
@@ -244,6 +230,48 @@ void USB_LP_IRQHandler(void)
   /* USER CODE BEGIN USB_LP_IRQn 1 */
 
   /* USER CODE END USB_LP_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM1 update interrupt and TIM16 global interrupt.
+  */
+void TIM1_UP_TIM16_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM1_UP_TIM16_IRQn 0 */
+
+  /* USER CODE END TIM1_UP_TIM16_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim16);
+  /* USER CODE BEGIN TIM1_UP_TIM16_IRQn 1 */
+
+  /* USER CODE END TIM1_UP_TIM16_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM6 global interrupt, DAC1 and DAC3 channel underrun error interrupts.
+  */
+void TIM6_DAC_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
+
+  /* USER CODE END TIM6_DAC_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim6);
+  /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
+
+  /* USER CODE END TIM6_DAC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM7 global interrupt, DAC2 and DAC4 channel underrun error interrupts.
+  */
+void TIM7_DAC_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM7_DAC_IRQn 0 */
+
+  /* USER CODE END TIM7_DAC_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim7);
+  /* USER CODE BEGIN TIM7_DAC_IRQn 1 */
+
+  /* USER CODE END TIM7_DAC_IRQn 1 */
 }
 
 /**

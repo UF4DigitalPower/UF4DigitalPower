@@ -82,17 +82,6 @@ void BSP_updateAppAdcResultFromBuffers(void)
                                                          BSP_POWER_IOUT_RAW_CAL_B);
 }
 
-void BSP_setAppInjectedRaw(uint16_t vout_raw, uint16_t vin_raw)
-{
-    g_BSP_adcResult.vout_raw = s_BSP_getAppCalibratedRaw(vout_raw,
-                                                         BSP_POWER_VOUT_RAW_CAL_K,
-                                                         BSP_POWER_VOUT_RAW_CAL_B);
-    if ((vin_raw != 0U) || (g_BSP_adcResult.vin_raw == 0U))
-    {
-        g_BSP_adcResult.vin_raw = vin_raw;
-    }
-}
-
 void BSP_setAppAuxTemperatureRaw(uint16_t temp1_raw, uint16_t temp2_raw, uint16_t die_temp_raw)
 {
     g_BSP_adcResult.temp1_raw = temp1_raw;

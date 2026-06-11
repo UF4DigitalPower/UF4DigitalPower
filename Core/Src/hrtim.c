@@ -70,15 +70,6 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
-  pADCTriggerCfg.Trigger = HRTIM_ADCTRIGGEREVENT24_TIMERA_CMP4;
-  if (HAL_HRTIM_ADCTriggerConfig(&hhrtim1, HRTIM_ADCTRIGGER_2, &pADCTriggerCfg) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_HRTIM_ADCPostScalerConfig(&hhrtim1, HRTIM_ADCTRIGGER_2, 20) != HAL_OK)
-  {
-    Error_Handler();
-  }
   pTimeBaseCfg.Period = 27200;
   pTimeBaseCfg.RepetitionCounter = 0x00;
   pTimeBaseCfg.PrescalerRatio = HRTIM_PRESCALERRATIO_MUL32;
@@ -179,8 +170,8 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
-  pOutputCfg.SetSource = HRTIM_OUTPUTSET_TIMCMP1;
-  pOutputCfg.ResetSource = HRTIM_OUTPUTRESET_TIMPER;
+  pOutputCfg.SetSource = HRTIM_OUTPUTSET_NONE;
+  pOutputCfg.ResetSource = HRTIM_OUTPUTRESET_NONE;
   if (HAL_HRTIM_WaveformOutputConfig(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_OUTPUT_TA2, &pOutputCfg) != HAL_OK)
   {
     Error_Handler();

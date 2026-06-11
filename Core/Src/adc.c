@@ -41,7 +41,6 @@ void MX_ADC1_Init(void)
 
   ADC_MultiModeTypeDef multimode = {0};
   ADC_ChannelConfTypeDef sConfig = {0};
-  ADC_InjectionConfTypeDef sConfigInjected = {0};
 
   /* USER CODE BEGIN ADC1_Init 1 */
 
@@ -55,7 +54,7 @@ void MX_ADC1_Init(void)
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.GainCompensation = 0;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.NbrOfConversion = 4;
@@ -64,11 +63,7 @@ void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
-  hadc1.Init.OversamplingMode = ENABLE;
-  hadc1.Init.Oversampling.Ratio = ADC_OVERSAMPLING_RATIO_4;
-  hadc1.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_1;
-  hadc1.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
-  hadc1.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
+  hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -121,35 +116,6 @@ void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
-
-  /** Configure Injected Channel
-  */
-  sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
-  sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
-  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_6CYCLES_5;
-  sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
-  sConfigInjected.InjectedOffsetNumber = ADC_OFFSET_NONE;
-  sConfigInjected.InjectedOffset = 0;
-  sConfigInjected.InjectedNbrOfConversion = 2;
-  sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
-  sConfigInjected.AutoInjectedConv = DISABLE;
-  sConfigInjected.QueueInjectedContext = DISABLE;
-  sConfigInjected.ExternalTrigInjecConv = ADC_INJECTED_SOFTWARE_START;
-  sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_NONE;
-  sConfigInjected.InjecOversamplingMode = DISABLE;
-  if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Injected Channel
-  */
-  sConfigInjected.InjectedChannel = ADC_CHANNEL_3;
-  sConfigInjected.InjectedRank = ADC_INJECTED_RANK_2;
-  if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
@@ -186,11 +152,7 @@ void MX_ADC2_Init(void)
   hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc2.Init.DMAContinuousRequests = DISABLE;
   hadc2.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-  hadc2.Init.OversamplingMode = ENABLE;
-  hadc2.Init.Oversampling.Ratio = ADC_OVERSAMPLING_RATIO_256;
-  hadc2.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_4;
-  hadc2.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
-  hadc2.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
+  hadc2.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc2) != HAL_OK)
   {
     Error_Handler();
@@ -245,11 +207,7 @@ void MX_ADC3_Init(void)
   hadc3.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc3.Init.DMAContinuousRequests = DISABLE;
   hadc3.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-  hadc3.Init.OversamplingMode = ENABLE;
-  hadc3.Init.Oversampling.Ratio = ADC_OVERSAMPLING_RATIO_256;
-  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_4;
-  hadc3.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
-  hadc3.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
+  hadc3.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc3) != HAL_OK)
   {
     Error_Handler();
@@ -311,11 +269,7 @@ void MX_ADC5_Init(void)
   hadc5.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc5.Init.DMAContinuousRequests = DISABLE;
   hadc5.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-  hadc5.Init.OversamplingMode = ENABLE;
-  hadc5.Init.Oversampling.Ratio = ADC_OVERSAMPLING_RATIO_64;
-  hadc5.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_3;
-  hadc5.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
-  hadc5.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
+  hadc5.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc5) != HAL_OK)
   {
     Error_Handler();
@@ -398,9 +352,6 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
 
     __HAL_LINKDMA(adcHandle,DMA_Handle,hdma_adc1);
 
-    /* ADC1 interrupt Init */
-    HAL_NVIC_SetPriority(ADC1_2_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(ADC1_2_IRQn);
   /* USER CODE BEGIN ADC1_MspInit 1 */
 
   /* USER CODE END ADC1_MspInit 1 */
@@ -435,9 +386,6 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(ADC_TEMP2_GPIO_Port, &GPIO_InitStruct);
 
-    /* ADC2 interrupt Init */
-    HAL_NVIC_SetPriority(ADC1_2_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(ADC1_2_IRQn);
   /* USER CODE BEGIN ADC2_MspInit 1 */
 
   /* USER CODE END ADC2_MspInit 1 */
@@ -526,16 +474,6 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 
     /* ADC1 DMA DeInit */
     HAL_DMA_DeInit(adcHandle->DMA_Handle);
-
-    /* ADC1 interrupt Deinit */
-  /* USER CODE BEGIN ADC1:ADC1_2_IRQn disable */
-    /**
-    * Uncomment the line below to disable the "ADC1_2_IRQn" interrupt
-    * Be aware, disabling shared interrupt may affect other IPs
-    */
-    /* HAL_NVIC_DisableIRQ(ADC1_2_IRQn); */
-  /* USER CODE END ADC1:ADC1_2_IRQn disable */
-
   /* USER CODE BEGIN ADC1_MspDeInit 1 */
 
   /* USER CODE END ADC1_MspDeInit 1 */
@@ -555,15 +493,6 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
     PB2     ------> ADC2_IN12
     */
     HAL_GPIO_DeInit(ADC_TEMP2_GPIO_Port, ADC_TEMP2_Pin);
-
-    /* ADC2 interrupt Deinit */
-  /* USER CODE BEGIN ADC2:ADC1_2_IRQn disable */
-    /**
-    * Uncomment the line below to disable the "ADC1_2_IRQn" interrupt
-    * Be aware, disabling shared interrupt may affect other IPs
-    */
-    /* HAL_NVIC_DisableIRQ(ADC1_2_IRQn); */
-  /* USER CODE END ADC2:ADC1_2_IRQn disable */
 
   /* USER CODE BEGIN ADC2_MspDeInit 1 */
 
@@ -606,37 +535,6 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 }
 
 /* USER CODE BEGIN 1 */
-void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc)
-{
-  if ((hadc != NULL) && (hadc->Instance == ADC1))
-  {
-    uint32_t vin_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
-    uint32_t vout_raw = HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_2);
-
-    BSP_setAppInjectedRaw((uint16_t)vout_raw, (uint16_t)vin_raw);
-  }
-}
-
-void ADC_updateAppPowerInjectedRaw(void)
-{
-  uint32_t vin_raw;
-  uint32_t vout_raw;
-
-  if (HAL_ADCEx_InjectedStart(&hadc1) != HAL_OK)
-  {
-    return;
-  }
-
-  if (HAL_ADCEx_InjectedPollForConversion(&hadc1, 2U) == HAL_OK)
-  {
-    vin_raw = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
-    vout_raw = HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2);
-    BSP_setAppInjectedRaw((uint16_t)vout_raw, (uint16_t)vin_raw);
-  }
-
-  (void)HAL_ADCEx_InjectedStop(&hadc1);
-}
-
 void ADC_pollAppPowerAuxRaw(void)
 {
   static uint32_t last_poll_tick = 0U;
