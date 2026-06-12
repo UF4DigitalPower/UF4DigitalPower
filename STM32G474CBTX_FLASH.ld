@@ -45,6 +45,7 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 128K
+  CCMRAM (xrw)    : ORIGIN = 0x10000000,   LENGTH = 32K
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 128K
 }
 
@@ -163,6 +164,17 @@ SECTIONS
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
   } >RAM
+
+  . = ALIGN(4);
+  .ccmram_bss (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _sccmram_bss = .;
+    *(.ccmram_bss)
+    *(.ccmram_bss*)
+    . = ALIGN(4);
+    _eccmram_bss = .;
+  } >CCMRAM
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :

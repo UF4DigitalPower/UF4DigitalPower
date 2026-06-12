@@ -17,8 +17,6 @@
 #ifndef PID_H
 #define PID_H
 
-#define
-
 // 环路的参数buck输出-恒压-PID型补偿器
 #define BUCKPIDb0 5795
 #define BUCKPIDb1 -11411

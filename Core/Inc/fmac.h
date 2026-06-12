@@ -29,6 +29,7 @@ extern "C" {
 #include "main.h"
 
 /* USER CODE BEGIN Includes */
+#include <stdint.h>
 
 /* USER CODE END Includes */
 
@@ -41,6 +42,11 @@ extern FMAC_HandleTypeDef hfmac;
 void MX_FMAC_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+void POWER_FMAC_InitFilters(void);
+uint16_t POWER_FMAC_FilterVin(uint16_t sample);
+uint16_t POWER_FMAC_FilterIin(uint16_t sample);
+uint16_t POWER_FMAC_FilterVout(uint16_t sample);
+uint16_t POWER_FMAC_FilterIout(uint16_t sample);
 
 /* USER CODE END Prototypes */
 

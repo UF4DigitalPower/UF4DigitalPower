@@ -119,6 +119,7 @@ int main(void)
   MX_CRC_Init();
   MX_FMAC_Init();
   /* USER CODE BEGIN 2 */
+  POWER_FMAC_InitFilters();                    // FMAC FIR滤波器初始化
   DF.SMFlag = Init;                         // 初始化状态机
   // OLED_Init();                           // OLED初始化
   // OLED_Clear();                          // 清除OLED屏显示缓冲区

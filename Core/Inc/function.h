@@ -20,7 +20,9 @@
 #define FUNCTION1_H
 #include "stdint.h"
 
-#define CCRAM __attribute__((section("ram")))
+#define RAMFUNC __attribute__((section(".RamFunc")))
+#define CCRAM RAMFUNC
+#define CCRAM_BSS __attribute__((section(".ccmram_bss")))
 
 #define ADC_MAX_VALUE 4095.0F				   // ADC最大值
 #define REF_3V3 3.2806F						   // VREF参考电压

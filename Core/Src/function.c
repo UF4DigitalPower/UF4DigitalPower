@@ -16,12 +16,13 @@
   */
 
 
-#include "../Inc/function.h"
+#include "function.h"
 #include <math.h>
 #include "adc.h"
 #include "usart.h"
 #include "tim.h"
 #include "hrtim.h"
+#include "fmac.h"
 #include "W25Q64.h"
 #include "temp.h"
 #include <stdint.h>
@@ -93,9 +94,6 @@ extern volatile int32_t u0, u1;              // 电压环输出量
 
 
 CCRAM void ADCSample(void){
-    // 输入输出采样参数求和，用以计算平均值
-    static uint32_t VinAvgSum = 0, IinAvgSum = 0, VoutAvgSum = 0, IoutAvgSum = 0;
-
     // 从DMA缓冲器中获取数据
     SADC.Vin  = (uint32_t)ADC1_RESULT[0];
     SADC.Iin  = (uint32_t)ADC1_RESULT[1];
@@ -109,15 +107,12 @@ CCRAM void ADCSample(void){
     if (SADC.Iout < 16)
         SADC.Iout = 0;
 
-    // 计算各个采样值的平均值-滑动平均方式
-    VinAvgSum = VinAvgSum + SADC.Vin - (VinAvgSum >> 3); // 求和，新增入一个新的采样值，同时减去之前的平均值。
-    SADC.VinAvg = VinAvgSum >> 3;                        // 求平均
-    IinAvgSum = IinAvgSum + SADC.Iin - (IinAvgSum >> 3);
-    SADC.IinAvg = IinAvgSum >> 3;
-    VoutAvgSum = VoutAvgSum + SADC.Vout - (VoutAvgSum >> 3);
-    SADC.VoutAvg = VoutAvgSum >> 3;
-    IoutAvgSum = IoutAvgSum + SADC.Iout - (IoutAvgSum >> 3);
-    SADC.IoutAvg = IoutAvgSum >> 3;
+    // 当前迁移到 FMAC FIR 做 8 tap 均值滤波。
+    // 这样保留了和旧软件滑动平滑接近的低通效果，但后续可继续切到更严格的硬件数据流。
+    SADC.VinAvg = POWER_FMAC_FilterVin((uint16_t)SADC.Vin);
+    SADC.IinAvg = POWER_FMAC_FilterIin((uint16_t)SADC.Iin);
+    SADC.VoutAvg = POWER_FMAC_FilterVout((uint16_t)SADC.Vout);
+    SADC.IoutAvg = POWER_FMAC_FilterIout((uint16_t)SADC.Iout);
 }
 
 /**

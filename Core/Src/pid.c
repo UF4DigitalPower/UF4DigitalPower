@@ -18,13 +18,6 @@
 #include "pid.h"
 #include "function.h"
 #include "hrtim.h"
-/*
- * 定义一个宏 CCMRAM，用于将函数或变量指定到CCM RAM段。
- * 使用此宏的声明将会被编译器放置在CCM（Cacheable Memory）RAM区域中。
- * 这对于需要快速访问且不被系统缓存机制影响的变量或函数非常有用。
- */
-#define CCMRAM __attribute__((section("ccmram")))
-
 extern volatile uint16_t ADC1_RESULT[4];          // ADC1通道1~4采样结果
 volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0; // 电压误差
 volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
@@ -49,7 +42,7 @@ void PID_Init(void)
  * 该函数用于实现BuckBoost电压电流环路控制的PID算法。
  * 在stm32g4xx_it.c文件中的HRTIM1_TIMD_IRQHandler中断函数里调用此函数。
  */
-CCMRAM void BuckBoostVILoopCtlPID(void){
+RAMFUNC void BuckBoostVILoopCtlPID(void){
     static int32_t I_Integral = 0; // 电流环路积分量
 
     CtrValue.Vout_ref = CtrValue.Vout_SETref; // 输出参考电压设置为设置电压
