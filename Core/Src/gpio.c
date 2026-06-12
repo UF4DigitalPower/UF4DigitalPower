@@ -50,12 +50,12 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, SPI1_CS_Pin|BLUE_Pin|GREEN_Pin|RED_Pin
+  HAL_GPIO_WritePin(GPIOB, SPI1_CS_Pin|LED_R_Pin|LED_Y_Pin|LED_G_Pin
                           |DIV_SW_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SPI1_CS_Pin BLUE_Pin GREEN_Pin RED_Pin
+  /*Configure GPIO pins : SPI1_CS_Pin LED_R_Pin LED_Y_Pin LED_G_Pin
                            DIV_SW_Pin */
-  GPIO_InitStruct.Pin = SPI1_CS_Pin|BLUE_Pin|GREEN_Pin|RED_Pin
+  GPIO_InitStruct.Pin = SPI1_CS_Pin|LED_R_Pin|LED_Y_Pin|LED_G_Pin
                           |DIV_SW_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;

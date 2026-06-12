@@ -1,10 +1,23 @@
-//
-// Created by UF4 on 26-6-11.
-//
+/**
+  ******************************************************************************
+  * @file    function.h
+  * @author  UF4
+  * @date    26-6-12 下午2:31
+  * @brief
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2026 UF4.
+  * All rights reserved.
+  *
+  * This software is provided "as is", without warranty of any kind.
+  *
+  ******************************************************************************
+  */
 
-#ifndef FUNCTION_H
-#define FUNCTION_H
 
+#ifndef FUNCTION1_H
+#define FUNCTION1_H
 #include "stdint.h"
 
 #define CCRAM __attribute__((section("ram")))
@@ -12,21 +25,21 @@
 #define ADC_MAX_VALUE 4095.0F				   // ADC最大值
 #define REF_3V3 3.2806F						   // VREF参考电压
 
-#define POWER_CTRL_DEFAULT_SET_VOLTAGE_MV       5000U   // 默认输出电压
-#define POWER_CTRL_DEFAULT_SET_CURRENT_MA       1000U  // 默认输出电流
-#define POWER_CTRL_DEFAULT_OTP_SET_MC           80000  // 默认OTP值
-#define POWER_CTRL_DEFAULT_OVP_SET_MV           45000U  // 默认过压值 45v
-#define POWER_CTRL_DEFAULT_OCP_SET_MA           10000U  // 默认过流值 10A
+#define POWER_CTRL_DEFAULT_SET_VOLTAGE       5.0F   // 默认输出电压
+#define POWER_CTRL_DEFAULT_SET_CURRENT       1.0F  // 默认输出电流
+#define POWER_CTRL_DEFAULT_OTP_SET           80.0F  // 默认OTP值
+#define POWER_CTRL_DEFAULT_OVP_SET           45.0F  // 默认过压值 45v
+#define POWER_CTRL_DEFAULT_OCP_SET           10.0F  // 默认过流值 10A
 
 
 // 设置欠压阈值死区
-#define POWER_CTRL_VIN_UVLO_START_MV            5500U  // 输入电压下降到这个值就开始启动
-#define POWER_CTRL_VIN_UVLO_STOP_MV             5200U  // 输入电压上升到这个值就停止启动
+#define POWER_CTRL_VIN_UVLO_START         5.5F  // 输入电压下降到这个值就开始启动
+#define POWER_CTRL_VIN_UVLO_STOP          5.2F  // 输入电压上升到这个值就停止启动
 
-#define POWER_CTRL_VIN_OVP_MV                   50000U  // 输入过压阈值
+#define POWER_CTRL_VIN_OVP                5.0F  // 输入过压阈值
 
-#define POWER_CTRL_SHORT_CURRENT_MA             10100U  // 短接电流阈值
-#define POWER_CTRL_SHORT_VOLTAGE_MV             500U    // 短接电压阈值
+#define POWER_CTRL_SHORT_CURRENT          10.0F  // 短接电流阈值
+#define POWER_CTRL_SHORT_VOLTAGE          0.5F    // 短接电压阈值
 
 /*
  * 从当前 200 kHz HRTIM的参考项目中重新离散
@@ -98,6 +111,14 @@
 #define F_SW_SHORT 0x0020	 // 输出短路
 #define F_OTP 0x0040		 // 温度过高
 
+#define LED_R_ON     HAL_GPIO_WritePin(GPIOB, LED_R_Pin, GPIO_PIN_SET);
+#define LED_R_OFF  HAL_GPIO_WritePin(GPIOB, LED_R_Pin, GPIO_PIN_RESET);
+
+#define LED_G_ON     HAL_GPIO_WritePin(GPIOB, LED_G_Pin, GPIO_PIN_SET);
+#define LED_G_OFF  HAL_GPIO_WritePin(GPIOB, LED_G_Pin, GPIO_PIN_RESET);
+
+#define LED_Y_ON     HAL_GPIO_WritePin(GPIOB, LED_Y_Pin, GPIO_PIN_SET);
+#define LED_Y_OFF  HAL_GPIO_WritePin(GPIOB, LED_Y_Pin, GPIO_PIN_RESET);
 
 struct _SET_Value
 {
@@ -264,4 +285,5 @@ void float_to_bytes(float value, uint8_t *bytes);
 float bytes_to_float(uint8_t *bytes);
 void Auto_FAN(void);
 
-#endif //FUNCTION_H
+
+#endif //FUNCTION1_H
