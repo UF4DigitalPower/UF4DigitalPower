@@ -215,6 +215,9 @@ extern struct _FLAG DF;							// 控制标志位
 extern struct _ADI SADC;						// 采样变量
 extern volatile float VIN, VOUT, IIN, IOUT;		// 电压电流实际值
 extern volatile float Board1_TEMP, Board2_TEMP,CPU_TEMP; // 主板和CPU温度实际值
+extern volatile float MAX_OTP_VAL;              // 过温保护阈值
+extern volatile float MAX_VOUT_OVP_VAL;         // 输出过压保护阈值
+extern volatile float MAX_VOUT_OCP_VAL;         // 输出过流保护阈值
 extern volatile float powerEfficiency;			// 电源转换效率
 extern volatile _CVCC_Mode CVCC_Mode;			// 电源模式
 extern struct _SET_Value SET_Value;				// 设置参数

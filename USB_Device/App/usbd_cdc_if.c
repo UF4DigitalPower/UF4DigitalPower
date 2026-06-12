@@ -24,7 +24,7 @@
 /* USER CODE BEGIN INCLUDE */
 #include <string.h>
 
-#include "user_tvlcom_transport.h"
+#include "tvlcom.h"
 
 /* USER CODE END INCLUDE */
 
@@ -266,7 +266,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   /* USER CODE BEGIN 6 */
   if ((Buf != NULL) && (Len != NULL) && (*Len <= 0xFFFFU))
   {
-    USER_tvlcomTransportOnUsbCdcRx(Buf, (uint16_t)*Len);
+    TVLCOM_OnUsbCdcRx(Buf, (uint16_t)*Len);
   }
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);

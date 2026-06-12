@@ -33,6 +33,7 @@
 /* USER CODE BEGIN Includes */
 #include "function.h"
 #include "pid.h"
+#include "tvlcom.h"
 
 /* USER CODE END Includes */
 
@@ -136,6 +137,7 @@ int main(void)
   PID_Init();                               // PID初始化
   Init_Flash();                             // Flash初始化
   Read_Flash();                             // 读取Flash数据
+  TVLCOM_Init();                            // TVLCOM通信初始化，默认走USB CDC
 
   HAL_Delay(100);                                        // 延时100ms，等待供电稳定
 
@@ -185,6 +187,7 @@ int main(void)
         Update_Flash();                                 // 更新Flash存储内容
       }
     }
+    TVLCOM_RunTask(); // 通信后台任务，处理挂起发送和原始数据流
   }
   /* USER CODE END 3 */
 }
