@@ -30,7 +30,7 @@
 #define POWER_FMAC_COEFF_BASE 0U
 #define POWER_FMAC_X1_BASE 32U
 #define POWER_FMAC_Y_BASE 64U
-#define POWER_FMAC_Q15_SHIFT 4U
+#define POWER_FMAC_Q15_SHIFT 15U
 
 typedef struct
 {

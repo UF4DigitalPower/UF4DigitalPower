@@ -17,7 +17,6 @@
 
 
 #include "function.h"
-#include <math.h>
 #include "adc.h"
 #include "usart.h"
 #include "tim.h"
@@ -92,27 +91,54 @@ volatile float powerEfficiency = 0;                                // 电源转�
 extern volatile int32_t VErr0, VErr1, VErr2; // 电压误差
 extern volatile int32_t u0, u1;              // 电压环输出量
 
+static uint16_t s_ADC_SelectFilteredOrRaw(uint16_t rawValue, uint16_t filteredValue){
+    uint32_t delta;
 
-CCRAM void ADCSample(void){
+    if (filteredValue > rawValue){
+        delta = (uint32_t)(filteredValue - rawValue);
+    }
+    else{
+        delta = (uint32_t)(rawValue - filteredValue);
+    }
+
+    // FMAC 当前迁移阶段若结果明显偏离原始采样，则先回退原始值，
+    // 避免通信上报出现不合理的大电压/大电流。
+    if (delta > 256U){
+        return rawValue;
+    }
+    return filteredValue;
+}
+
+RAMFUNC void ADCSample(void){
+    uint16_t VinFiltered;
+    uint16_t IinFiltered;
+    uint16_t VoutFiltered;
+    uint16_t IoutFiltered;
+
     // 从DMA缓冲器中获取数据
     SADC.Vin  = (uint32_t)ADC1_RESULT[0];
     SADC.Iin  = (uint32_t)ADC1_RESULT[1];
     SADC.Vout = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
     SADC.Iout = (uint32_t)((ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B);
 
-    if (SADC.Vin < 15) // 采样有零偏离，采样值很小时，直接为0
+    if (SADC.Vin < 2) // 仅在接近零码时清零，避免低压输入被直接抹掉
         SADC.Vin = 0;
-    if (SADC.Vout < 15)
+    if (SADC.Vout < 2)
         SADC.Vout = 0;
-    if (SADC.Iout < 16)
+    if (SADC.Iout < 2)
         SADC.Iout = 0;
 
     // 当前迁移到 FMAC FIR 做 8 tap 均值滤波。
     // 这样保留了和旧软件滑动平滑接近的低通效果，但后续可继续切到更严格的硬件数据流。
-    SADC.VinAvg = POWER_FMAC_FilterVin((uint16_t)SADC.Vin);
-    SADC.IinAvg = POWER_FMAC_FilterIin((uint16_t)SADC.Iin);
-    SADC.VoutAvg = POWER_FMAC_FilterVout((uint16_t)SADC.Vout);
-    SADC.IoutAvg = POWER_FMAC_FilterIout((uint16_t)SADC.Iout);
+    VinFiltered = POWER_FMAC_FilterVin((uint16_t)SADC.Vin);
+    IinFiltered = POWER_FMAC_FilterIin((uint16_t)SADC.Iin);
+    VoutFiltered = POWER_FMAC_FilterVout((uint16_t)SADC.Vout);
+    IoutFiltered = POWER_FMAC_FilterIout((uint16_t)SADC.Iout);
+
+    SADC.VinAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Vin, VinFiltered);
+    SADC.IinAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Iin, IinFiltered);
+    SADC.VoutAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Vout, VoutFiltered);
+    SADC.IoutAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Iout, IoutFiltered);
 }
 
 /**
@@ -121,10 +147,15 @@ CCRAM void ADCSample(void){
  */
 void ADC_calculate(void){
     VIN  = SADC.VinAvg  * REF_3V3 / ADC_MAX_VALUE * BSP_POWER_VIN_SENSE_SCALE;   // 计算ADC1通道0输入电压采样结果
-    IIN  = (SADC.IinAvg * REF_3V3 / ADC_MAX_VALUE - BSP_POWER_CURRENT_BIAS_V) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+    IIN  = (BSP_POWER_CURRENT_BIAS_V - SADC.IinAvg * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
     VOUT = SADC.VoutAvg * REF_3V3 / ADC_MAX_VALUE * BSP_POWER_VOUT_SENSE_SCALE;  // 计算ADC1通道2输出电压采样结果
-    IOUT = (SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE - BSP_POWER_CURRENT_BIAS_V) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+    IOUT = (BSP_POWER_CURRENT_BIAS_V - SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+
+    if (IIN < 0.0F)
+        IIN = 0.0F;
+    if (IOUT < 0.0F)
+        IOUT = 0.0F;
 
     Board1_TEMP = GET_NTC1_Temperature();  // 获取NTC1温度
     Board2_TEMP = GET_NTC2_Temperature();  // 获取NTC2温度
@@ -135,7 +166,7 @@ void ADC_calculate(void){
 /*
  * @brief 状态机函数，在5ms中断中运行，5ms运行一次
  */
-CCRAM void StateM(void){
+RAMFUNC void StateM(void){
     // 判断状态类型
     switch (DF.SMFlag){
         // 初始化状态
@@ -217,12 +248,10 @@ void StateMErr(void){
     DF.PWMENFlag = 0;
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
-    LED_R_ON;LED_G_OFF;LED_Y_OFF;
     DF.BBFlag = NA;                                                              // 切换运行模式
     // 若故障消除跳转至等待重新软启
     if (DF.ErrFlag == F_NOERR){
         DF.SMFlag = Wait;
-        LED_R_OFF;LED_G_ON;LED_Y_OFF;
     }
 }
 /*
@@ -485,7 +514,7 @@ void OTP(void){
  * MIX模式：1.15倍输入电压>输出参考电压>0.85倍输入电压
  * 当进入MIX（buck-boost）模式后，退出到BUCK或者BOOST时需要滞缓，防止在临界点来回振荡
  */
-CCRAM void BBMode(void){
+RAMFUNC void BBMode(void){
     uint8_t PreBBFlag = 0;// 上一次模式状态量
     PreBBFlag = DF.BBFlag;// 暂存当前的模式状态量
 

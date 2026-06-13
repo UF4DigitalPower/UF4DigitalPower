@@ -10,7 +10,7 @@
  */
 void W25Q64_SPIStart(void)
 {
-	HAL_GPIO_WritePin(Flash_CS_GPIO_Port, Flash_CS_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(SPI1_CS_GPIO_Port, SPI1_CS_Pin, GPIO_PIN_RESET);
 }
 
 /**
@@ -19,7 +19,7 @@ void W25Q64_SPIStart(void)
  */
 void W25Q64_SPIStop(void)
 {
-	HAL_GPIO_WritePin(Flash_CS_GPIO_Port, Flash_CS_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(SPI1_CS_GPIO_Port, SPI1_CS_Pin, GPIO_PIN_SET);
 }
 
 /**
@@ -31,7 +31,7 @@ void W25Q64_SPIStop(void)
 uint8_t MySPI_SwapByte(uint8_t ByteSend)
 {
 	uint8_t rxData = 0;													   // 用于接收数据的变量
-	HAL_SPI_TransmitReceive(&hspi3, &ByteSend, &rxData, 1, HAL_MAX_DELAY); // SPI发送数据并接收数据
+	HAL_SPI_TransmitReceive(&hspi1, &ByteSend, &rxData, 1, HAL_MAX_DELAY); // SPI发送数据并接收数据
 	return rxData;
 }
 
@@ -55,10 +55,9 @@ void W25Q64_WriteEnable(void)
 
 void W25Q64_WaitBusy(void)
 {
-	uint32_t Timeout;
 	W25Q64_SPIStart();
 	MySPI_SwapByte(W25Q64_READ_STATUS_REGISTER_1);
-	Timeout = 100000;
+	uint32_t Timeout = 100000;
 	while ((MySPI_SwapByte(W25Q64_DUMMY_BYTE) & 0x01) == 0x01)
 	{
 		Timeout--;

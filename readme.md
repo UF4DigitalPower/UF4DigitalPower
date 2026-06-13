@@ -6,7 +6,7 @@
 - 控制方式：电压环 + 电流环双闭环 PID
 - 功率驱动：支持互补 PWM 输出与死区控制
 - 数据存储：外接 SPI Flash，用于保存 PID 参数和系统状态
-- 通信接口：XX
+- 通信接口：UF4COM V3，支持 USB CDC、USART1、USART2 固定端口编译选择
 - 保护能力：支持过压、过流、过温等参数管理与保护阈值设定
 
 ### 采样与测量说明
@@ -55,15 +55,15 @@ BSP_getAppVinVoltage();
 BSP_setAppInjectedRaw();
 POWER_getAppSnapshot();
 POWER_setAppEnabled();
-USER_tvlcomFeed();
-USER_tvlcomTransportOnUsbCdcRx();
+UF4_InputByte();
+TVLCOM_OnUsbCdcRx();
 ```
 
 静态函数采用 `s_MODULE_` 前缀，避免使用 C 标准保留的前导下划线命名：
 
 ```c
 static float s_BSP_getAppAdcRawVoltage(...);
-static int s_USER_tvlcomAppendTlv(...);
+static uint16_t s_TVLCOM_FloatToMilliU16(...);
 static uint32_t s_POWER_getAppU32Nonnegative(...);
 ```
 
@@ -72,7 +72,7 @@ static uint32_t s_POWER_getAppU32Nonnegative(...);
 ```c
 #define BSP_POWER_ADC1_REGULAR_COUNT  4U
 #define POWER_CTRL_STATE_FLAG_RUN     0x08U
-#define USER_TVLCOM_MAX_PAYLOAD_SIZE  384U
+#define UF4_MAX_DATA_LEN  255U
 ```
 
 类型名使用 `MODULE_object_t`，枚举值和宏一样使用全大写模块前缀：
@@ -96,7 +96,18 @@ extern volatile BSP_adcResult_t g_BSP_adcResult;
 static POWER_ctrlSettings_t s_POWER_ctrlSettings;
 ```
 
-变量、结构体字段使用小写蛇形，并在名称中保留单位：`vin_mv`、`iout_ma`、`duty_tick`、`temperature_mc`。协议契约中的 `CMD`、`TLV`、`CRC` 等缩写在宏和枚举中保持全大写。
+变量、结构体字段使用小写蛇形，并在名称中保留单位：`vin_mv`、`iout_ma`、`duty_tick`、`temperature_mc`。协议契约中的 `CMD`、`TV`、`CRC` 等缩写在宏和枚举中保持全大写。
+
+### 当前通信协议
+
+固件当前使用 `E:\PROJECT_C\UF4COM` 中的 UF4COM V3 协议核心，旧的 TVLCOM TLV/Modbus CRC 协议已经从固件源码中移除。
+
+- 帧头：`AA 55`
+- CRC：CRC16-CCITT，覆盖 `SEQ FLAGS CMD LEN DATA`
+- 数据格式：固定 3 字节 TV，`ID VALUE_H VALUE_L`
+- 接收入口：USB CDC 调用 `TVLCOM_OnUsbCdcRx()`，USART DMA 由 `TVLCOM_RunTask()` 轮询喂给 `UF4_InputBuffer()`
+- 发送入口：UF4COM 通过 `UF4_Init()` 注入的回调调用 `TVLCOM_SendBytes()`
+- 数据绑定：`Core/Src/tvlcom.c` 绑定 README 协议表中的全部 `UF4_ID_*`，写入类 ID 会同步应用到电源设置、输出开关和风扇
 
 ### 运行状态机
 

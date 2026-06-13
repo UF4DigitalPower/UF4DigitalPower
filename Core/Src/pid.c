@@ -19,11 +19,11 @@
 #include "function.h"
 #include "hrtim.h"
 extern volatile uint16_t ADC1_RESULT[4];          // ADC1通道1~4采样结果
-volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0; // 电压误差
-volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
-volatile int32_t u0 = 0, u1 = 0;                  // 电压环输出量
-volatile int32_t i0 = 0, i1 = 0;                  // 电流环输出量
-volatile _CVCC_Mode CVCC_Mode = CV;               // 恒流恒压模式标志位
+CCRAM volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0; // 电压误差
+CCRAM volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
+CCRAM volatile int32_t u0 = 0, u1 = 0;                  // 电压环输出量
+CCRAM volatile int32_t i0 = 0, i1 = 0;                  // 电流环输出量
+CCRAM volatile _CVCC_Mode CVCC_Mode = CV;               // 恒流恒压模式标志位
 
 void PID_Init(void)
 {
@@ -43,7 +43,7 @@ void PID_Init(void)
  * 在stm32g4xx_it.c文件中的HRTIM1_TIMD_IRQHandler中断函数里调用此函数。
  */
 RAMFUNC void BuckBoostVILoopCtlPID(void){
-    static int32_t I_Integral = 0; // 电流环路积分量
+    static CCRAM int32_t I_Integral = 0; // 电流环路积分量
 
     CtrValue.Vout_ref = CtrValue.Vout_SETref; // 输出参考电压设置为设置电压
 

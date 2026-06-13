@@ -34,6 +34,7 @@
 #include "function.h"
 #include "pid.h"
 #include "tvlcom.h"
+#include "status_led.h"
 
 /* USER CODE END Includes */
 
@@ -139,13 +140,15 @@ int main(void)
   Read_Flash();                             // 读取Flash数据
   TVLCOM_Init();                            // TVLCOM通信初始化，默认走USB CDC
 
+  HAL_GPIO_WritePin(DIV_SW_GPIO_Port, DIV_SW_Pin, GPIO_PIN_SET);  // 启动DIV_SW引脚
+
   HAL_Delay(100);                                        // 延时100ms，等待供电稳定
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED); // 校准ADC1
   HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED); // 校准ADC2
   HAL_ADCEx_Calibration_Start(&hadc5, ADC_SINGLE_ENDED); // 校准ADC5
 
-  HAL_ADC_Start_DMA(&hadc1, ADC1_RESULT, 4); // 启动ADC1采样和DMA数据传送,采样输入输出电压电流
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)(void *)ADC1_RESULT, 4); // 启动ADC1采样和DMA数据传送,采样输入输出电压电流
   HAL_ADC_Start(&hadc2);                                 // 启动ADC2采样，采样NTC1温度
   HAL_ADC_Start(&hadc3);                                 // 启动ADC3采样，采样NTC2温度
   HAL_ADC_Start(&hadc5);                                 // 启动ADC5采样，采样单片机CPU温度
@@ -155,6 +158,7 @@ int main(void)
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP); // 开启HRTIM定时器D的中断
 
   FAN_PWM_set(0);                           // 设置风扇转速为0
+  StatusLed_Init();                         // 初始化三色状态指示灯
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -171,11 +175,7 @@ int main(void)
 
     if (ms_cnt_4 >= 50){    // 判断是否计时到50ms
       ms_cnt_4 = 0;         // 计时清零
-      if (DF.SMFlag == Rise || DF.SMFlag == Run){ // 判断当前状态
-        HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_SET); // LED_G输出状态指示灯亮
-      }
-      else{HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET); // LED_G输出状态指示灯灭
-      }
+      StatusLed_Update();    // 更新三色状态指示灯
     if (ms_cnt_2 >= 100){ // 判断是否计时到100ms
         ms_cnt_2 = 0;   // 计时清零
         Auto_FAN();     // 风扇转速控制
@@ -183,7 +183,6 @@ int main(void)
 
       if (ms_cnt_1 >= 500){ // 判断是否计时到500ms
         ms_cnt_1 = 0;                                   // 计时清零
-        HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin); // LED_R电平翻转
         Update_Flash();                                 // 更新Flash存储内容
       }
     }

@@ -49,11 +49,33 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-include_directories(Core/Inc USB_Device/App USB_Device/Target Drivers/STM32G4xx_HAL_Driver/Inc Drivers/STM32G4xx_HAL_Driver/Inc/Legacy Middlewares/ST/STM32_USB_Device_Library/Core/Inc Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc Drivers/CMSIS/Device/ST/STM32G4xx/Include Drivers/CMSIS/Include)
+set(UF4COM_ROOT "E:/PROJECT_C/UF4COM")
+
+include_directories(
+        Core/Inc
+        USB_Device/App
+        USB_Device/Target
+        Drivers/STM32G4xx_HAL_Driver/Inc
+        Drivers/STM32G4xx_HAL_Driver/Inc/Legacy
+        Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+        Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+        Drivers/CMSIS/Device/ST/STM32G4xx/Include
+        Drivers/CMSIS/Include
+        ${UF4COM_ROOT}/uf4com/protocol/Inc
+        ${UF4COM_ROOT}/uf4com/register/Inc
+)
 
 add_definitions(-DDEBUG -DUSE_HAL_DRIVER -DSTM32G474xx)
 
 file(GLOB_RECURSE SOURCES "USB_Device/*.*" "Core/*.*" "Middlewares/*.*" "Drivers/*.*")
+list(APPEND SOURCES "${CMAKE_SOURCE_DIR}/Core/Src/startup_stm32g474xx.s")
+list(APPEND SOURCES
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com.c"
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_cmd.c"
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_crc.c"
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_parser.c"
+        "${UF4COM_ROOT}/uf4com/register/Src/uf4com_id_table.c"
+)
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32G474CBTX_FLASH.ld)
 

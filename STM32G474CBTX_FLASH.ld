@@ -49,6 +49,16 @@ MEMORY
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 128K
 }
 
+PHDRS
+{
+  text    PT_LOAD FLAGS(5);
+  data    PT_LOAD FLAGS(6);
+  ramfunc PT_LOAD FLAGS(5);
+  bss     PT_LOAD FLAGS(6);
+  ccmram  PT_LOAD FLAGS(6);
+  heap    PT_LOAD FLAGS(6);
+}
+
 /* Sections */
 SECTIONS
 {
@@ -58,7 +68,7 @@ SECTIONS
     . = ALIGN(4);
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   /* The program code and other data into "FLASH" Rom type memory */
   .text :
@@ -75,7 +85,7 @@ SECTIONS
 
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
-  } >FLASH
+  } >FLASH :text
 
   /* Constant data into "FLASH" Rom type memory */
   .rodata :
@@ -84,14 +94,14 @@ SECTIONS
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
     *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   .ARM.extab (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
   {
     . = ALIGN(4);
     *(.ARM.extab* .gnu.linkonce.armextab.*)
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   .ARM (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
   {
@@ -100,7 +110,7 @@ SECTIONS
     *(.ARM.exidx*)
     __exidx_end = .;
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   .preinit_array (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
   {
@@ -109,7 +119,7 @@ SECTIONS
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   .init_array (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
   {
@@ -119,7 +129,7 @@ SECTIONS
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   .fini_array (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
   {
@@ -129,7 +139,7 @@ SECTIONS
     KEEP (*(.fini_array*))
     PROVIDE_HIDDEN (__fini_array_end = .);
     . = ALIGN(4);
-  } >FLASH
+  } >FLASH :text
 
   /* Used by the startup to initialize data */
   _sidata = LOADADDR(.data);
@@ -141,17 +151,29 @@ SECTIONS
     _sdata = .;        /* create a global symbol at data start */
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
-    *(.RamFunc)        /* .RamFunc sections */
-    *(.RamFunc*)       /* .RamFunc* sections */
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
 
-  } >RAM AT> FLASH
+  } >RAM AT> FLASH :data
+
+  /* Used by the startup to initialize ram functions */
+  _si_ramfunc = LOADADDR(.RamFunc);
+
+  /* Functions copied to RAM for time-critical execution */
+  .RamFunc :
+  {
+    . = ALIGN(4);
+    _s_ramfunc = .;
+    *(.RamFunc)        /* .RamFunc sections */
+    *(.RamFunc*)       /* .RamFunc* sections */
+    . = ALIGN(4);
+    _e_ramfunc = .;
+  } >RAM AT> FLASH :ramfunc
 
   /* Uninitialized data section into "RAM" Ram type memory */
   . = ALIGN(4);
-  .bss :
+  .bss (NOLOAD) :
   {
     /* This is used by the startup in order to initialize the .bss section */
     _sbss = .;         /* define a global symbol at bss start */
@@ -163,7 +185,7 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >RAM
+  } >RAM :bss
 
   . = ALIGN(4);
   .ccmram_bss (NOLOAD) :
@@ -174,7 +196,7 @@ SECTIONS
     *(.ccmram_bss*)
     . = ALIGN(4);
     _eccmram_bss = .;
-  } >CCMRAM
+  } >CCMRAM :ccmram
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :
@@ -185,7 +207,7 @@ SECTIONS
     . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
-  } >RAM
+  } >RAM :heap
 
   /* Remove information from the compiler libraries */
   /DISCARD/ :
