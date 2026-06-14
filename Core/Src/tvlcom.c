@@ -148,24 +148,24 @@ static uint16_t s_TVLCOM_FloatToMilliU16(float value)
     return s_TVLCOM_ClampU16((uint32_t)(value * 1000.0F + 0.5F));
 }
 
-static uint16_t s_TVLCOM_FloatToMilliS16(float value)
+static uint16_t s_TVLCOM_FloatToCentiU16(float value)
 {
-    int32_t milli;
+    int32_t centi;
 
     if(value >= 0.0F)
     {
-        milli = (int32_t)(value * 1000.0F + 0.5F);
+        centi = (int32_t)(value * 100.0F + 0.5F);
     }
     else
     {
-        milli = (int32_t)(value * 1000.0F - 0.5F);
+        centi = (int32_t)(value * 100.0F - 0.5F);
     }
 
-    if(milli < 0)
+    if(centi < 0)
     {
         return 0U;
     }
-    return s_TVLCOM_ClampU16((uint32_t)milli);
+    return s_TVLCOM_ClampU16((uint32_t)centi);
 }
 
 static uint16_t s_TVLCOM_GetStateFlagBits(void)
@@ -282,9 +282,9 @@ static void s_TVLCOM_UpdateReadRegisters(void)
     s_id_input_current = s_TVLCOM_FloatToMilliU16(IIN);
     s_id_output_voltage = s_TVLCOM_FloatToMilliU16(VOUT);
     s_id_output_current = s_TVLCOM_FloatToMilliU16(IOUT);
-    s_id_core_temperature = s_TVLCOM_FloatToMilliS16(CPU_TEMP);
-    s_id_temp1_temperature = s_TVLCOM_FloatToMilliS16(Board1_TEMP);
-    s_id_temp2_temperature = s_TVLCOM_FloatToMilliS16(Board2_TEMP);
+    s_id_core_temperature = s_TVLCOM_FloatToCentiU16(CPU_TEMP);
+    s_id_temp1_temperature = s_TVLCOM_FloatToCentiU16(Board1_TEMP);
+    s_id_temp2_temperature = s_TVLCOM_FloatToCentiU16(Board2_TEMP);
     s_id_set_voltage_limit = s_TVLCOM_FloatToMilliU16(SET_Value.Vout);
     s_id_set_current_limit = s_TVLCOM_FloatToMilliU16(SET_Value.Iout);
     s_id_cc_cv_mode = s_TVLCOM_GetCvccMode();
@@ -296,8 +296,8 @@ static void s_TVLCOM_UpdateReadRegisters(void)
     s_id_input_current_raw = s_TVLCOM_ClampU16(SADC.Iin);
     s_id_output_voltage_raw = s_TVLCOM_ClampU16(SADC.Vout);
     s_id_output_current_raw = s_TVLCOM_ClampU16(SADC.Iout);
-    s_id_otp_value = s_TVLCOM_FloatToMilliS16(hottest_temp);
-    s_id_otp_set_value = s_TVLCOM_FloatToMilliS16(MAX_OTP_VAL);
+    s_id_otp_value = s_TVLCOM_FloatToCentiU16(hottest_temp);
+    s_id_otp_set_value = s_TVLCOM_FloatToCentiU16(MAX_OTP_VAL);
     s_id_ovp_value = s_TVLCOM_FloatToMilliU16(VOUT);
     s_id_ovp_set_value = s_TVLCOM_FloatToMilliU16(MAX_VOUT_OVP_VAL);
     s_id_ocp_value = s_TVLCOM_FloatToMilliU16(IOUT);
@@ -316,7 +316,7 @@ static void s_TVLCOM_ApplyWriteRegisters(void)
 {
     float set_voltage = (float)s_id_set_voltage_limit / 1000.0F;
     float set_current = (float)s_id_set_current_limit / 1000.0F;
-    float otp = (float)s_id_otp_set_value / 1000.0F;
+    float otp = (float)s_id_otp_set_value / 100.0F;
     float ovp = (float)s_id_ovp_set_value / 1000.0F;
     float ocp = (float)s_id_ocp_set_value / 1000.0F;
     uint16_t fan_set = s_id_fan_set_value;
@@ -435,6 +435,20 @@ static void s_TVLCOM_FlushPending(TVLCOM_ChannelContext *channel)
     }
 }
 
+static uint8_t s_TVLCOM_CdcTxIdle(void)
+{
+    extern USBD_HandleTypeDef hUsbDeviceFS;
+    USBD_CDC_HandleTypeDef *hcdc;
+
+    if(hUsbDeviceFS.pClassData == NULL)
+    {
+        return 1U;
+    }
+
+    hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
+    return (uint8_t)(hcdc->TxState == 0U);
+}
+
 static void s_TVLCOM_PollTxCompletion(TVLCOM_ChannelContext *channel)
 {
     if((channel == NULL) || (channel->tx_busy == 0U))
@@ -448,6 +462,12 @@ static void s_TVLCOM_PollTxCompletion(TVLCOM_ChannelContext *channel)
     }
     else if((channel->port == TVLCOM_PORT_USART2) && (huart2.gState == HAL_UART_STATE_READY))
     {
+        channel->tx_busy = 0U;
+    }
+    else if((channel->port == TVLCOM_PORT_CDC) && (s_TVLCOM_CdcTxIdle() != 0U))
+    {
+        /* CDC 的 TX 完成回调不一定总能抢在主循环再次尝试发送之前到达，
+           这里直接查询 USB CDC 的真实 TxState 作为兜底，避免 tx_busy 永久卡死。 */
         channel->tx_busy = 0U;
     }
 }

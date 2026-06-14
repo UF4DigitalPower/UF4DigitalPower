@@ -19,6 +19,7 @@ UF4DigitalPower 是基于 STM32G474 的数字电源固件。当前通信协议�
 - 在 `Core/Src/tvlcom.c` 中绑定 UF4COM README 表里的全部数据 ID。
 - 写入 ID 会应用到 `SET_Value`、`MAX_OTP_VAL`、`MAX_VOUT_OVP_VAL`、`MAX_VOUT_OCP_VAL`、`DF.OUTPUT_Flag` 和风扇 PWM。
 - 通过 `UF4_SetWriteApplyCallback()` 只在成功处理 `WRITE_REQ` 后应用写入，READ/STREAM 不会误触发设置保存或风扇手动模式。
+- 温度和 OTP 类 ID 使用摄氏度乘以 100 的协议值，界面保留两位小数，避免 `uint16_t` 下毫摄氏度量程不足。
 
 ## 当前协议入口
 
