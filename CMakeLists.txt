@@ -18,13 +18,10 @@ project(UF4DigitalPower C CXX ASM)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 
-#Uncomment for hardware floating point
-#add_compile_definitions(ARM_MATH_CM4;ARM_MATH_MATRIX_CHECK;ARM_MATH_ROUNDING)
-#add_compile_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
-#add_link_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
-
-#Uncomment for software floating point
-#add_compile_options(-mfloat-abi=soft)
+#Enable hardware floating point (Cortex-M4F)
+add_compile_definitions(ARM_MATH_CM4)
+add_compile_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
+add_link_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
 
 add_compile_options(-mcpu=cortex-m4 -mthumb -mthumb-interwork)
 add_compile_options(-ffunction-sections -fdata-sections -fno-common -fmessage-length=0)
@@ -76,6 +73,7 @@ list(APPEND SOURCES
         "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_parser.c"
         "${UF4COM_ROOT}/uf4com/register/Src/uf4com_id_table.c"
 )
+
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32G474CBTX_FLASH.ld)
 

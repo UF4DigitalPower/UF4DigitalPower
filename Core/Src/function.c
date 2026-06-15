@@ -91,29 +91,8 @@ volatile float powerEfficiency = 0;                                // 电源转�
 extern volatile int32_t VErr0, VErr1, VErr2; // 电压误差
 extern volatile int32_t u0, u1;              // 电压环输出量
 
-static uint16_t s_ADC_SelectFilteredOrRaw(uint16_t rawValue, uint16_t filteredValue){
-    uint32_t delta;
-
-    if (filteredValue > rawValue){
-        delta = (uint32_t)(filteredValue - rawValue);
-    }
-    else{
-        delta = (uint32_t)(rawValue - filteredValue);
-    }
-
-    // FMAC 当前迁移阶段若结果明显偏离原始采样，则先回退原始值，
-    // 避免通信上报出现不合理的大电压/大电流。
-    if (delta > 256U){
-        return rawValue;
-    }
-    return filteredValue;
-}
-
 RAMFUNC void ADCSample(void){
-    uint16_t VinFiltered;
-    uint16_t IinFiltered;
-    uint16_t VoutFiltered;
-    uint16_t IoutFiltered;
+    static uint32_t VinAvgSum = 0, IinAvgSum = 0, VoutAvgSum = 0, IoutAvgSum = 0;
 
     // 从DMA缓冲器中获取数据
     SADC.Vin  = (uint32_t)ADC1_RESULT[0];
@@ -121,24 +100,22 @@ RAMFUNC void ADCSample(void){
     SADC.Vout = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
     SADC.Iout = (uint32_t)((ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B);
 
-    if (SADC.Vin < 2) // 仅在接近零码时清零，避免低压输入被直接抹掉
+    if (SADC.Vin < 2)  // 仅在接近零码时清零，避免低压输入被直接抹掉
         SADC.Vin = 0;
     if (SADC.Vout < 2)
         SADC.Vout = 0;
     if (SADC.Iout < 2)
         SADC.Iout = 0;
 
-    // 当前迁移到 FMAC FIR 做 8 tap 均值滤波。
-    // 这样保留了和旧软件滑动平滑接近的低通效果，但后续可继续切到更严格的硬件数据流。
-    VinFiltered = POWER_FMAC_FilterVin((uint16_t)SADC.Vin);
-    IinFiltered = POWER_FMAC_FilterIin((uint16_t)SADC.Iin);
-    VoutFiltered = POWER_FMAC_FilterVout((uint16_t)SADC.Vout);
-    IoutFiltered = POWER_FMAC_FilterIout((uint16_t)SADC.Iout);
-
-    SADC.VinAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Vin, VinFiltered);
-    SADC.IinAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Iin, IinFiltered);
-    SADC.VoutAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Vout, VoutFiltered);
-    SADC.IoutAvg = s_ADC_SelectFilteredOrRaw((uint16_t)SADC.Iout, IoutFiltered);
+    // 滑动平均：新增一个采样值，同时减去之前的平均值（IIR 一阶低通，等效 8 点平均）
+    VinAvgSum   = VinAvgSum   + SADC.Vin  - (VinAvgSum   >> 3);
+    SADC.VinAvg = VinAvgSum   >> 3;
+    IinAvgSum   = IinAvgSum   + SADC.Iin  - (IinAvgSum   >> 3);
+    SADC.IinAvg = IinAvgSum   >> 3;
+    VoutAvgSum  = VoutAvgSum  + SADC.Vout - (VoutAvgSum  >> 3);
+    SADC.VoutAvg = VoutAvgSum >> 3;
+    IoutAvgSum  = IoutAvgSum  + SADC.Iout - (IoutAvgSum  >> 3);
+    SADC.IoutAvg = IoutAvgSum >> 3;
 }
 
 /**
@@ -189,9 +166,6 @@ RAMFUNC void StateM(void){
         case Err:
             StateMErr();
         break;
-
-        default:
-            StateMErr();
     }
 }
 
@@ -635,11 +609,35 @@ void Read_Flash(void){
         OCPtemp[i] = Flash_data[i + 12];
         OVPtemp[i] = Flash_data[i + 16];
     }
-    SET_Value.Vout = bytes_to_float(VSETtemp); // 将字节序列转换为浮点数
-    SET_Value.Iout = bytes_to_float(ISETtemp); // 将字节序列转换为浮点数
-    MAX_OTP_VAL = bytes_to_float(OTPtemp);
-    MAX_VOUT_OCP_VAL = bytes_to_float(OCPtemp);
-    MAX_VOUT_OVP_VAL = bytes_to_float(OVPtemp);
+
+    /* Flash 首次使用或扇区被擦除时读出全 0xFF/0x00，bytes_to_float 会得到 NaN 或 0，
+       直接覆盖默认值会导致保护阈值变成 0、保护立即误触发。
+       这里对每个值做合理性校验，非法时保留 ValInit() 设的默认值。 */
+    float fv = bytes_to_float(VSETtemp);
+    float fi = bytes_to_float(ISETtemp);
+    float fotp = bytes_to_float(OTPtemp);
+    float focp = bytes_to_float(OCPtemp);
+    float fovp = bytes_to_float(OVPtemp);
+
+    if (fv == fv && fv > 0.0F && fv <= 100.0F){
+        SET_Value.Vout = fv;
+    }
+    if (fi == fi && fi >= 0.0F && fi <= 50.0F){
+        SET_Value.Iout = fi;
+    }
+    /* OTP：温度阈值合理范围 10~150℃；空 Flash 读出 0 或 NaN 时保持默认 80℃ */
+    if (fotp == fotp && fotp >= 10.0F && fotp <= 150.0F){
+        MAX_OTP_VAL = fotp;
+    }
+    /* OCP：电流阈值合理范围 0.1~50A */
+    if (focp == focp && focp >= 0.1F && focp <= 50.0F){
+        MAX_VOUT_OCP_VAL = focp;
+    }
+    /* OVP：电压阈值合理范围 1~100V；空 Flash 读出 0 时保持默认 45V，
+       否则 Vout>=0 永远成立、上电即误触发过压保护 */
+    if (fovp == fovp && fovp >= 1.0F && fovp <= 100.0F){
+        MAX_VOUT_OVP_VAL = fovp;
+    }
 }
 
 /**

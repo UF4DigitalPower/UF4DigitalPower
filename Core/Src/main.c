@@ -23,6 +23,7 @@
 #include "dma.h"
 #include "fmac.h"
 #include "hrtim.h"
+#include "iwdg.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -120,6 +121,7 @@ int main(void)
   MX_TIM16_Init();
   MX_CRC_Init();
   MX_FMAC_Init();
+  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
   POWER_FMAC_InitFilters();                    // FMAC FIR滤波器初始化
   DF.SMFlag = Init;                         // 初始化状态机
@@ -207,8 +209,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_LSI
+                              |RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
@@ -263,6 +267,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     OCP();       // 输出过流保护
     StateM();    // 电源状态机函数
     BBMode();    // 运行模式判断
+    // 流发送放在 TIM7 中断里（每 4 次 = 20ms），避免输出开启后主循环被
+    // HRTIM PID 中断饿死导致 STREAM_DATA 断流。
+    {
+      static uint8_t stream_div = 0;
+      stream_div++;
+      if (stream_div >= 4U) {
+        stream_div = 0U;
+        TVLCOM_StreamTick();
+      }
+    }
   }
   if (htim->Instance == TIM16) // 定时器TIM4，中断时间10ms
   {

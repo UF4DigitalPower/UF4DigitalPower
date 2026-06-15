@@ -328,9 +328,20 @@ static void s_TVLCOM_ApplyWriteRegisters(void)
 
     SET_Value.Vout = set_voltage;
     SET_Value.Iout = set_current;
-    MAX_OTP_VAL = otp;
-    MAX_VOUT_OVP_VAL = ovp;
-    MAX_VOUT_OCP_VAL = ocp;
+    /* 保护阈值只在合法范围内接受，避免上位机写 0 导致 Vout>=0 永远成立、
+       上电即误触发保护。OTP 10~150℃、OVP 1~100V、OCP 0.1~50A。 */
+    if(otp >= 10.0F && otp <= 150.0F)
+    {
+        MAX_OTP_VAL = otp;
+    }
+    if(ovp >= 1.0F && ovp <= 100.0F)
+    {
+        MAX_VOUT_OVP_VAL = ovp;
+    }
+    if(ocp >= 0.1F && ocp <= 50.0F)
+    {
+        MAX_VOUT_OCP_VAL = ocp;
+    }
     SET_Value.SET_modified_flag = 1.0F;
     s_TVLCOM_UpdateControlReferenceFromSetting();
 
@@ -582,6 +593,26 @@ void TVLCOM_RunTask(void)
         s_tvlcom.last_fan_apply_tick = tick_now;
     }
 
+    /* 流发送（poll TX / flush pending / UF4_Process）已移到 TVLCOM_StreamTick，
+       由 TIM7 中断每 20ms 调用，避免输出开启后主循环被 HRTIM PID 中断饿死。 */
+    for(i = 0U; i < TVLCOM_CHANNEL_COUNT; ++i)
+    {
+        if(s_TVLCOM_IsPortEnabled(s_tvlcom.channels[i].port) != 0U)
+        {
+            s_TVLCOM_PollTxCompletion(&s_tvlcom.channels[i]);
+            s_TVLCOM_FlushPending(&s_tvlcom.channels[i]);
+        }
+    }
+}
+
+void TVLCOM_StreamTick(void)
+{
+    uint32_t i;
+
+    /* 刷新读寄存器（流数据来源） */
+    s_TVLCOM_UpdateReadRegisters();
+
+    /* poll TX 完成 + flush pending，确保上一帧发完才发下一帧 */
     for(i = 0U; i < TVLCOM_CHANNEL_COUNT; ++i)
     {
         if(s_TVLCOM_IsPortEnabled(s_tvlcom.channels[i].port) != 0U)
@@ -591,11 +622,7 @@ void TVLCOM_RunTask(void)
         }
     }
 
-    if((tick_now - s_tvlcom.last_stream_tick) >= TVLCOM_STREAM_PERIOD_MS)
-    {
-        s_tvlcom.last_stream_tick = tick_now;
-        UF4_Process();
-    }
+    UF4_Process();
 }
 
 void TVLCOM_SelectPort(TVLCOM_Port port)

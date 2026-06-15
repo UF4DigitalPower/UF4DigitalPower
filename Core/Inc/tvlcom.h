@@ -37,6 +37,7 @@ typedef enum
 
 void TVLCOM_Init(void);
 void TVLCOM_RunTask(void);
+void TVLCOM_StreamTick(void);  /* 流发送 tick：poll TX + flush pending + UF4_Process，可放定时器中断 */
 void TVLCOM_SelectPort(TVLCOM_Port port);
 TVLCOM_Port TVLCOM_GetPort(void);
 HAL_StatusTypeDef TVLCOM_SendBytes(const uint8_t *data, uint16_t len);

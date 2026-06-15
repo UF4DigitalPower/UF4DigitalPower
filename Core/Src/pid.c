@@ -18,6 +18,7 @@
 #include "pid.h"
 #include "function.h"
 #include "hrtim.h"
+
 extern volatile uint16_t ADC1_RESULT[4];          // ADC1通道1~4采样结果
 CCRAM volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0; // 电压误差
 CCRAM volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
