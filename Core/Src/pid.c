@@ -38,7 +38,10 @@ void PID_Init(void)
   u0 = 0;
   u1 = 0;
   i0 = 0;
+  i1 = 0;
   IErr0 = 0;
+  IErr1 = 0;
+  CVCC_Mode = CV;
 }
 
 
@@ -96,8 +99,12 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     // BBModeChange为模式切换为，不同模式切换时，该位会被置1
     if (DF.BBModeChange){
         u1 = 0;
+        VErr1 = 0;
+        VErr2 = 0;
         I_Integral = 0;
         i0 = 0;
+        IErr1 = 0;
+        CVCC_Mode = CV;
         DF.BBModeChange = 0;
     }
 
@@ -149,8 +156,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             // 环路输出最大最小占空比限制
             if (CtrValue.BoostDuty > CtrValue.BoostMaxDuty)
                 CtrValue.BoostDuty = CtrValue.BoostMaxDuty;
-            if (CtrValue.BoostDuty < BSP_POWER_BOOST_DUTY_MAX_TICK)
-                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MAX_TICK;
+            if (CtrValue.BoostDuty < BSP_POWER_BOOST_DUTY_MIN_TICK)
+                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
             break;
         }
         case Mix:{ // Mix模式
@@ -169,8 +176,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             // 环路输出最大最小占空比限制
             if (CtrValue.BoostDuty > CtrValue.BoostMaxDuty)
                 CtrValue.BoostDuty = CtrValue.BoostMaxDuty;
-            if (CtrValue.BoostDuty < BSP_POWER_BOOST_DUTY_MAX_TICK)
-                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MAX_TICK;
+            if (CtrValue.BoostDuty < BSP_POWER_BOOST_DUTY_MIN_TICK)
+                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
             break;
         }
     }

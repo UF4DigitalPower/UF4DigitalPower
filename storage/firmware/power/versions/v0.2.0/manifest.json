@@ -1,0 +1,40 @@
+{
+  "project": "F4CP",
+  "kind": "Power",
+  "version": "v0.2.0",
+  "device": "STM32G474CBT6",
+  "hardware": "F4CP-G474-Power",
+  "channel": "beta",
+  "date": "2026-06-15",
+  "min_client": "0.4.0",
+  "files": {
+    "bin": {
+      "name": "F4CP-Power-v0.2.0.bin",
+      "download_url": "/api/v1/firmware/power/versions/v0.2.0/download?type=bin",
+      "sha256": "f5e2e775c323eee415276100a29e4f5cc8da5ed2210f8f8939f1b574a4bb1427",
+      "size": 54732
+    },
+    "hex": {
+      "name": "F4CP-Power-v0.2.0.hex",
+      "download_url": "/api/v1/firmware/power/versions/v0.2.0/download?type=hex",
+      "sha256": "400dbaa5a255dd1336e7afa363851ac4810479ededa06da0dc02b98f7c2f032c",
+      "size": 154040
+    }
+  },
+  "burn": {
+    "method": "pyocd",
+    "target": "stm32g474cbtx",
+    "reset_after_download": true
+  },
+  "changelog_url": "/api/v1/firmware/power/versions/v0.2.0/changelog",
+  "notes": [
+    "Beta release v0.2.0",
+    "Target device: F4CP-POWER / STM32G474CBT6",
+    "Fix BoostDuty lower clamp in Boost and Mix modes",
+    "Reset PID state more completely in PID_Init and BBModeChange",
+    "Fix OCP stop path channels to current hardware TA and TD outputs",
+    "Fix Auto_FAN temperature threshold ordering",
+    "Keep current LED behavior unchanged",
+    "Release date: 2026-06-15"
+  ]
+}

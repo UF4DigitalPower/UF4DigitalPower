@@ -37,3 +37,26 @@ UF4DigitalPower 是基于 STM32G474 的数字电源固件。当前通信协议�
 
 - 2026-06-13：`cmake --build E:\PROJECT_C\UF4DigitalPower\cmake-build-debug -- -j4` 构建通过，生成 `UF4DigitalPower.elf/.hex/.bin`。
 - 2026-06-13：`E:\PROJECT_C\UF4COM\cmake-build-debug\UF4COM.exe` 自测通过。
+
+## 2026-06-15 控制细节维护
+
+- 对照 `E:\PROJECT_C\Buck-Boost-Digital-Power` 示例工程复查了快环、中断优先级、保护路径和辅助状态逻辑。
+- 保持 LED 行为不变，按当前项目定义继续使用 `status_led.c` 的状态语义，不向示例工程回退。
+- 修复 `Core/Src/pid.c` 中 Boost/Mix 模式的 `BoostDuty` 下限钳位错误：
+  - 旧代码错误地把下限钳到 `BSP_POWER_BOOST_DUTY_MAX_TICK`
+  - 现改为钳到 `BSP_POWER_BOOST_DUTY_MIN_TICK`
+- 补强 `PID_Init()` 和模式切换 `BBModeChange` 的状态复位：
+  - 增加清零 `IErr1`
+  - 增加清零 `i1`
+  - 模式切换时额外清零 `VErr1/VErr2`
+  - 模式切换时恢复 `CVCC_Mode = CV`
+- 修复 `Core/Src/function.c` 中 OCP 保护停波路径残留的旧示例通道：
+  - 旧代码仍使用 `HRTIM_OUTPUT_TF1 | HRTIM_OUTPUT_TF2`
+  - 当前硬件为 `TA` 路 Buck、`TD` 路 Boost，因此统一修正为停 `TA` 和 `TD`
+- 修复 `Auto_FAN()` 温度分档判断顺序：
+  - 旧代码先判断 `TEMP >= 35`，导致更高温档位永远无法命中
+  - 现改为从高温到低温依次判断
+- 中断优先级本轮确认保持不变：
+  - HRTIM 快环：1 级
+  - TIM7 状态/保护节拍：2 级
+  - TIM6/TIM16 后台节拍：3 级

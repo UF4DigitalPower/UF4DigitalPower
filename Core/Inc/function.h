@@ -264,6 +264,7 @@ void StateMWait(void);
 void StateMRise(void);
 void StateMRun(void);
 void StateMErr(void);
+void BBMode(void);
 
 void ValInit(void);
 void OTP(void);

@@ -427,8 +427,8 @@ void OCP(void){
         if (OCPCnt > 10){ // 条件保持50ms，则认为过流发生
             OCPCnt = 0;// 计数器清0
             DF.PWMENFlag = 0; // 关闭PWM
-            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BUCK电路的PWM输出
-            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TF1 | HRTIM_OUTPUT_TF2); // 关闭BOOST电路的PWM输出
+            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
             // 故障标志位
             setRegBits(DF.ErrFlag, F_SW_IOUT_OCP);
             // 跳转至故障状态
@@ -452,8 +452,8 @@ void OCP(void){
             if (RSNum > 10){// 过流重启只重启10次，10次后不重启（严重故障）
                 RSNum = 11;// 确保不清除故障，不重启
                 DF.PWMENFlag = 0;// 关闭PWM
-                HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BUCK电路的PWM输出
-                HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TF1 | HRTIM_OUTPUT_TF2); // 关闭BOOST电路的PWM输出
+                HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+                HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
             }
             else{
                 // 清除过流保护故障标志位
@@ -700,11 +700,11 @@ void Auto_FAN(void){
     const float TEMP = TEMP1 * 0.6 + TEMP2 * 0.4; // 计算平均温度
 
     if (TEMP < 35){FAN_PWM_set(0);}
-    else if (TEMP >= 35){FAN_PWM_set(35);}
-    else if (TEMP >= 40){FAN_PWM_set(45);}
-    else if (TEMP >= 45){FAN_PWM_set(60);}
-    else if (TEMP >= 50){FAN_PWM_set(70);}
-    else if (TEMP >= 55){FAN_PWM_set(80);}
-    else if (TEMP >= 60){FAN_PWM_set(90);}
     else if (TEMP >= 65){FAN_PWM_set(100);}
+    else if (TEMP >= 60){FAN_PWM_set(90);}
+    else if (TEMP >= 55){FAN_PWM_set(80);}
+    else if (TEMP >= 50){FAN_PWM_set(70);}
+    else if (TEMP >= 45){FAN_PWM_set(60);}
+    else if (TEMP >= 40){FAN_PWM_set(45);}
+    else if (TEMP >= 35){FAN_PWM_set(35);}
 }
