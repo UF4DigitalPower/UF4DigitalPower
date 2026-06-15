@@ -127,8 +127,6 @@ struct _SET_Value
     volatile float SET_modified_flag; // 设置被修改标志位
     volatile float Vout;			  // 输出电压设置值
     volatile float Iout;			  // 输出电流设置值
-    volatile uint8_t currentSetting;  // 当前设置项标志位，0表示没有选中设置项
-    volatile uint8_t SET_bit;		  // 当前设置位标志位，0表示没有选中设置位
 };
 
 // 控制参数结构体
@@ -258,10 +256,6 @@ extern struct _SET_Value SET_Value;				// 设置参数
 #define getReg(reg) (reg)
 
 void ADCSample(void);
-
-void Encoder(void);
-void Key_Process(void);
-void OLED_Display(void);
 void ADC_calculate(void);
 
 void StateM(void);
@@ -276,10 +270,6 @@ void OTP(void);
 void OVP(void);
 void OCP(void);
 void ShortOff(void);
-
-void BBMode(void);
-void BUZZER_Short(void);
-void BUZZER_Middle(void);
 
 float GET_CPU_Temperature(void);
 void FAN_PWM_set(uint16_t pwm);

@@ -26,6 +26,10 @@ CCRAM volatile int32_t u0 = 0, u1 = 0;                  // 电压环输出量
 CCRAM volatile int32_t i0 = 0, i1 = 0;                  // 电流环输出量
 CCRAM volatile _CVCC_Mode CVCC_Mode = CV;               // 恒流恒压模式标志位
 
+/**
+ * @brief 初始化 PID 环路相关状态量。
+ * 清零误差项、积分项和控制输出，避免上电时继承旧状态。
+ */
 void PID_Init(void)
 {
   VErr0 = 0;

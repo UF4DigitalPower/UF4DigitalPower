@@ -35,6 +35,10 @@ uint8_t MySPI_SwapByte(uint8_t ByteSend)
 	return rxData;
 }
 
+/**
+ * @brief 读取 W25Q64 的 JEDEC 设备 ID。
+ * 读取厂商 ID 和器件 ID，用于确认外部 Flash 是否通信正常。
+ */
 void W25Q64_ReadID(uint8_t *MID, uint16_t *DID)
 {
 	W25Q64_SPIStart();
@@ -46,6 +50,10 @@ void W25Q64_ReadID(uint8_t *MID, uint16_t *DID)
 	W25Q64_SPIStop();
 }
 
+/**
+ * @brief 发送写使能命令。
+ * 在页编程、扇区擦除等写操作前必须先执行此函数。
+ */
 void W25Q64_WriteEnable(void)
 {
 	W25Q64_SPIStart();
@@ -53,6 +61,10 @@ void W25Q64_WriteEnable(void)
 	W25Q64_SPIStop();
 }
 
+/**
+ * @brief 等待 W25Q64 退出忙状态。
+ * 轮询状态寄存器 1 的 BUSY 位，直到器件空闲或超时退出。
+ */
 void W25Q64_WaitBusy(void)
 {
 	W25Q64_SPIStart();
@@ -69,6 +81,10 @@ void W25Q64_WaitBusy(void)
 	W25Q64_SPIStop();
 }
 
+/**
+ * @brief 按页写入一段数据到 Flash。
+ * 从指定地址开始连续写入 Count 个字节，不跨页拆分由上层保证。
+ */
 void W25Q64_PageProgram(uint32_t Address, uint8_t *DataArray, uint16_t Count)
 {
 	uint16_t i;
@@ -89,6 +105,10 @@ void W25Q64_PageProgram(uint32_t Address, uint8_t *DataArray, uint16_t Count)
 	W25Q64_SPIStop();
 }
 
+/**
+ * @brief 擦除包含指定地址的 4KB 扇区。
+ * 擦除前会等待器件空闲并自动发送写使能命令。
+ */
 void W25Q64_SectorErase(uint32_t Address)
 {
 	W25Q64_WaitBusy();
@@ -103,6 +123,10 @@ void W25Q64_SectorErase(uint32_t Address)
 	W25Q64_SPIStop();
 }
 
+/**
+ * @brief 从 Flash 中读取一段连续数据。
+ * 从指定地址开始读取 Count 个字节到目标缓冲区。
+ */
 void W25Q64_ReadData(uint32_t Address, uint8_t *DataArray, uint32_t Count)
 {
 	uint32_t i;

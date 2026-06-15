@@ -98,12 +98,22 @@ float GET_NTC1_Temperature(void) {
     uint32_t TEMP_adcValue = HAL_ADC_GetValue(&hadc2);   // 读取ADC2采样结果
     return BSP_tempAdcToTemperature(TEMP_adcValue);
 };
+
+/**
+ * @brief 读取 NTC2 通道温度。
+ * 启动 ADC3 采样并将当前转换结果换算为摄氏度。
+ */
 float GET_NTC2_Temperature(void) {
     HAL_ADC_Start(&hadc3); // 启动ADC2采样，采样NTC温度
     // HAL_ADC_PollForConversion(&hadc2, 100); // 等待ADC采样结束
     uint32_t TEMP_adcValue = HAL_ADC_GetValue(&hadc3);   // 读取ADC2采样结果
     return BSP_tempAdcToTemperature(TEMP_adcValue);
 };
+
+/**
+ * @brief 读取 MCU 内部温度。
+ * 使用出厂校准点对 ADC5 结果做换算，并经过一阶低通滤波后返回。
+ */
 float GET_CPU_Temperature(void) {
     HAL_ADC_Start(&hadc5); // 启动ADC5采样，采样单片机CPU温度
     // HAL_ADC_PollForConversion(&hadc5, 100); // 等待ADC采样结束

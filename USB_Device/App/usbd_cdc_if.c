@@ -24,7 +24,7 @@
 /* USER CODE BEGIN INCLUDE */
 #include <string.h>
 
-#include "tvlcom.h"
+#include "uf4_transport.h"
 
 /* USER CODE END INCLUDE */
 
@@ -266,7 +266,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   /* USER CODE BEGIN 6 */
   if ((Buf != NULL) && (Len != NULL) && (*Len <= 0xFFFFU))
   {
-    TVLCOM_OnUsbCdcRx(Buf, (uint16_t)*Len);
+    UF4Transport_OnUsbCdcRx(Buf, (uint16_t)*Len);
   }
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
@@ -330,7 +330,7 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
-  TVLCOM_OnTxComplete(TVLCOM_PORT_CDC);
+  UF4Transport_OnTxComplete(UF4_TRANSPORT_PORT_CDC);
   /* USER CODE END 13 */
   return result;
 }

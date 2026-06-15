@@ -56,14 +56,14 @@ BSP_setAppInjectedRaw();
 POWER_getAppSnapshot();
 POWER_setAppEnabled();
 UF4_InputByte();
-TVLCOM_OnUsbCdcRx();
+UF4Transport_OnUsbCdcRx();
 ```
 
 静态函数采用 `s_MODULE_` 前缀，避免使用 C 标准保留的前导下划线命名：
 
 ```c
 static float s_BSP_getAppAdcRawVoltage(...);
-static uint16_t s_TVLCOM_FloatToMilliU16(...);
+static uint16_t s_UF4Transport_FloatToMilliU16(...);
 static uint32_t s_POWER_getAppU32Nonnegative(...);
 ```
 
@@ -100,14 +100,14 @@ static POWER_ctrlSettings_t s_POWER_ctrlSettings;
 
 ### 当前通信协议
 
-固件当前使用 `E:\PROJECT_C\UF4COM` 中的 UF4COM V3 协议核心，旧的 TVLCOM TLV/Modbus CRC 协议已经从固件源码中移除。
+固件当前使用 `E:\PROJECT_C\UF4COM` 中的 UF4COM V3 协议核心，旧的 TVL TLV/Modbus CRC 协议已经从固件源码中移除。
 
 - 帧头：`AA 55`
 - CRC：CRC16-CCITT，覆盖 `SEQ FLAGS CMD LEN DATA`
 - 数据格式：固定 3 字节 TV，`ID VALUE_H VALUE_L`
-- 接收入口：USB CDC 调用 `TVLCOM_OnUsbCdcRx()`，USART DMA 由 `TVLCOM_RunTask()` 轮询喂给 `UF4_InputBuffer()`
-- 发送入口：UF4COM 通过 `UF4_Init()` 注入的回调调用 `TVLCOM_SendBytes()`
-- 数据绑定：`Core/Src/tvlcom.c` 绑定 README 协议表中的全部 `UF4_ID_*`，写入类 ID 会同步应用到电源设置、输出开关和风扇
+- 接收入口：USB CDC 调用 `UF4Transport_OnUsbCdcRx()`，USART DMA 由 `UF4Transport_RunTask()` 轮询喂给 `UF4_InputBuffer()`
+- 发送入口：UF4COM 通过 `UF4_Init()` 注入的回调调用 `UF4Transport_SendBytes()`
+- 数据绑定：`Core/Src/uf4_transport.c` 绑定 README 协议表中的全部 `UF4_ID_*`，写入类 ID 会同步应用到电源设置、输出开关和风扇
 
 ### 运行状态机
 

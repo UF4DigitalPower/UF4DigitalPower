@@ -12,6 +12,10 @@ typedef struct
     GPIO_PinState green;
 } StatusLedPattern;
 
+/**
+ * @brief 按给定图案更新三色状态灯输出。
+ * 将红、黄、绿三个指示灯一次性写到目标电平。
+ */
 static void StatusLed_Apply(StatusLedPattern pattern)
 {
     HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, pattern.red);
@@ -19,16 +23,28 @@ static void StatusLed_Apply(StatusLedPattern pattern)
     HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, pattern.green);
 }
 
+/**
+ * @brief 生成指定周期的闪烁电平。
+ * 根据系统节拍返回当前时刻应输出的高低电平。
+ */
 static GPIO_PinState StatusLed_Blink(uint32_t tickNow, uint32_t periodMs)
 {
     return (((tickNow / periodMs) & 0x01U) != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
 
+/**
+ * @brief 初始化状态指示灯默认显示。
+ * 上电后先点亮黄色指示灯表示固件已进入初始化流程。
+ */
 void StatusLed_Init(void)
 {
     StatusLed_Apply((StatusLedPattern){GPIO_PIN_RESET, GPIO_PIN_SET, GPIO_PIN_RESET});
 }
 
+/**
+ * @brief 根据当前状态机和故障状态刷新指示灯。
+ * 运行、等待、启动和故障状态分别映射到不同的灯光图案。
+ */
 void StatusLed_Update(void)
 {
     uint32_t tickNow = HAL_GetTick();

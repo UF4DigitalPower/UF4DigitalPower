@@ -21,7 +21,6 @@
 #include "usart.h"
 #include "tim.h"
 #include "hrtim.h"
-#include "fmac.h"
 #include "W25Q64.h"
 #include "temp.h"
 #include <stdint.h>
@@ -30,10 +29,7 @@
 // 数字后面加F表示使用单精度浮点数类型，C语言默认使用双精度浮点数类型，硬件浮点运算只支持单精度浮点数
 
 volatile uint16_t ADC1_RESULT[4] = {0, 0, 0, 0};                   // ADC采样外设到内存的DMA数据保存寄存器
-volatile uint8_t Encoder_Flag = 0;                                 // 编码器中断标志位
-volatile uint8_t BUZZER_Short_Flag = 0;                            // 蜂鸣器短叫触发标志位
-volatile uint8_t BUZZER_Middle_Flag = 0;                           // 蜂鸣器中等时间长度鸣叫触发标志位
-volatile uint8_t BUZZER_Flag = 0;                                  // 蜂鸣器当前状态标志位
+
 volatile float MAX_OTP_VAL;                                        // 过温保护阈值
 volatile float MAX_VOUT_OVP_VAL;                                   // 输出过压保护阈值
 volatile float MAX_VOUT_OCP_VAL;                                   // 输出过流保护阈值
@@ -77,8 +73,6 @@ struct _SET_Value SET_Value =
     {
     0,
     0,
-    0,
-    0,
     0
     };   // 设置参数
 
@@ -91,6 +85,10 @@ volatile float powerEfficiency = 0;                                // 电源转�
 extern volatile int32_t VErr0, VErr1, VErr2; // 电压误差
 extern volatile int32_t u0, u1;              // 电压环输出量
 
+/**
+ * @brief 对 ADC DMA 采样结果做滤波与平均。
+ * 更新输入输出电压电流的原始值和滑动平均值，供控制与上报使用。
+ */
 RAMFUNC void ADCSample(void){
     static uint32_t VinAvgSum = 0, IinAvgSum = 0, VoutAvgSum = 0, IoutAvgSum = 0;
 
@@ -139,9 +137,9 @@ void ADC_calculate(void){
     CPU_TEMP = GET_CPU_Temperature();      // 获取单片机CPU温度
 }
 
-
-/*
- * @brief 状态机函数，在5ms中断中运行，5ms运行一次
+/**
+ * @brief 执行一次主状态机调度。
+ * 在 5ms 节拍中根据当前状态分发到对应的状态处理函数。
  */
 RAMFUNC void StateM(void){
     // 判断状态类型
@@ -169,18 +167,17 @@ RAMFUNC void StateM(void){
     }
 }
 
-/*
- * @brief 初始化状态函数，参数初始化
+/**
+ * @brief 处理初始化状态。
+ * 完成参数初始化后切换到等待状态。
  */
 void StateMInit(void){
     ValInit();    // 相关参数初始化
     DF.SMFlag = Wait;    // 状态机跳转至等待软启状态
 }
-
-
-
-/*
- * @brief 相关参数初始化函数
+/**
+ * @brief 初始化默认参数与保护阈值。
+ * 在上电和状态机复位时恢复控制上下文到安全默认值。
  */
 void ValInit(void){
     DF.PWMENFlag = 0;    // 关闭PWM
@@ -209,13 +206,15 @@ void ValInit(void){
     MAX_VOUT_OVP_VAL = POWER_CTRL_DEFAULT_OVP_SET;      // 输出过压保护阈值
     MAX_VOUT_OCP_VAL = POWER_CTRL_DEFAULT_OCP_SET;      // 输出过流保护阈值
 }
-/*
- * @brief 正常运行，主处理函数在中断中运行
+/**
+ * @brief 运行态占位处理函数。
+ * 当前主要闭环控制在快环中断中执行，此处保留运行态扩展入口。
  */
 void StateMRun(void){}
 
-/*
- * @brief 故障状态机
+/**
+ * @brief 处理故障状态。
+ * 关闭 PWM 输出，并在故障清除后允许状态机回到等待态。
  */
 void StateMErr(void){
     // 关闭PWM
@@ -228,8 +227,9 @@ void StateMErr(void){
         DF.SMFlag = Wait;
     }
 }
-/*
- * @brief 等待状态机
+/**
+ * @brief 处理等待状态。
+ * 等待输出使能与无故障条件满足后进入软启动流程。
  */
 void StateMWait(void){
     // 计数器定义
@@ -248,10 +248,9 @@ void StateMWait(void){
         }
     }
 }
-
-
-/*
- * @brief 软启动阶段
+/**
+ * @brief 处理软启动阶段。
+ * 分阶段建立参考值和占空边界，降低启动时的电压电流冲击。
  */
 void StateMRise(void){
     static uint16_t Cnt = 0;     // 计时器
@@ -344,8 +343,10 @@ void StateMRise(void){
         break;
     }
 }
-
-
+/**
+ * @brief 处理输出短路保护与自动重试。
+ * 短路成立时立即关断输出，并在限定次数内按延时策略尝试恢复。
+ */
 void ShortOff(void){
     static int32_t RSCnt = 0;
     static uint8_t RSNum = 0;

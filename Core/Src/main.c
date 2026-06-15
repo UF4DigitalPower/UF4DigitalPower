@@ -19,9 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
-#include "crc.h"
 #include "dma.h"
-#include "fmac.h"
 #include "hrtim.h"
 #include "iwdg.h"
 #include "spi.h"
@@ -34,7 +32,7 @@
 /* USER CODE BEGIN Includes */
 #include "function.h"
 #include "pid.h"
-#include "tvlcom.h"
+#include "uf4_transport.h"
 #include "status_led.h"
 
 /* USER CODE END Includes */
@@ -60,7 +58,6 @@
 
 volatile uint16_t ms_cnt_1 = 0; // 计时变量1
 volatile uint16_t ms_cnt_2 = 0; // 计时变量2
-volatile uint16_t ms_cnt_3 = 0; // 计时变量3
 volatile uint16_t ms_cnt_4 = 0; // 计时变量4
 
 /* USER CODE END PV */
@@ -119,11 +116,8 @@ int main(void)
   MX_TIM6_Init();
   MX_TIM7_Init();
   MX_TIM16_Init();
-  MX_CRC_Init();
-  MX_FMAC_Init();
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
-  POWER_FMAC_InitFilters();                    // FMAC FIR滤波器初始化
   DF.SMFlag = Init;                         // 初始化状态机
   // OLED_Init();                           // OLED初始化
   // OLED_Clear();                          // 清除OLED屏显示缓冲区
@@ -140,7 +134,7 @@ int main(void)
   PID_Init();                               // PID初始化
   Init_Flash();                             // Flash初始化
   Read_Flash();                             // 读取Flash数据
-  TVLCOM_Init();                            // TVLCOM通信初始化，默认走USB CDC
+  UF4Transport_Init();                            // UF4 传输初始化，默认走 USB CDC
 
   HAL_GPIO_WritePin(DIV_SW_GPIO_Port, DIV_SW_Pin, GPIO_PIN_SET);  // 启动DIV_SW引脚
 
@@ -170,25 +164,23 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (ms_cnt_3 >= 10){    // 判断是否计时到10ms
-      ms_cnt_3 = 0;         // 计时清零
-      ADC_calculate();      // ADC采样结果计算
-    }
-
-    if (ms_cnt_4 >= 50){    // 判断是否计时到50ms
+    if (ms_cnt_4 >= 50)
+      {    // 判断是否计时到50ms
       ms_cnt_4 = 0;         // 计时清零
       StatusLed_Update();    // 更新三色状态指示灯
-    if (ms_cnt_2 >= 100){ // 判断是否计时到100ms
+    if (ms_cnt_2 >= 100)
+      { // 判断是否计时到100ms
         ms_cnt_2 = 0;   // 计时清零
         Auto_FAN();     // 风扇转速控制
       }
 
-      if (ms_cnt_1 >= 500){ // 判断是否计时到500ms
+      if (ms_cnt_1 >= 500)
+        { // 判断是否计时到500ms
         ms_cnt_1 = 0;                                   // 计时清零
         Update_Flash();                                 // 更新Flash存储内容
       }
     }
-    TVLCOM_RunTask(); // 通信后台任务，处理挂起发送和原始数据流
+    UF4Transport_RunTask(); // 通信后台任务，处理挂起发送和原始数据流
   }
   /* USER CODE END 3 */
 }
@@ -239,6 +231,10 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+
+  /** Enables the Clock Security System
+  */
+  HAL_RCC_EnableCSS();
 }
 
 /* USER CODE BEGIN 4 */
@@ -255,7 +251,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM6){ // 定时器TIM2，中断时间1ms
     ms_cnt_1++;
     ms_cnt_2++;
-    ms_cnt_3++;
     ms_cnt_4++;
   }
   if (htim->Instance == TIM7){ // 定时器TIM3，中断时间5ms
@@ -274,13 +269,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       stream_div++;
       if (stream_div >= 4U) {
         stream_div = 0U;
-        TVLCOM_StreamTick();
+        UF4Transport_StreamTick();
       }
     }
   }
   if (htim->Instance == TIM16) // 定时器TIM4，中断时间10ms
   {
-
+    /* 把测量量换算放到固定 10 ms 节拍里，避免输出开启后主循环被高频控制打断，
+       导致 UF4COM 继续上报旧的 VIN/VOUT/IIN/IOUT 浮点值。 */
+    ADC_calculate();
   }
 }
 /* USER CODE END 4 */
