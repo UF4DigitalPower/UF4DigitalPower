@@ -132,6 +132,7 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim16);           // 启动定时器4和定时器中断，100Hz
   // Key_Init();                            // 按键状态机初始化
   PID_Init();                               // PID初始化
+  ValInit();                                // 先装载默认值，供 Flash 首次初始化和非法数据兜底使用
   Init_Flash();                             // Flash初始化
   Read_Flash();                             // 读取Flash数据
   UF4Transport_Init();                            // UF4 传输初始化，默认走 USB CDC
@@ -165,22 +166,23 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     if (ms_cnt_4 >= 50)
-      {    // 判断是否计时到50ms
-      ms_cnt_4 = 0;         // 计时清零
+      {                      // 判断是否计时到50ms
+      ms_cnt_4 = 0;          // 计时清零
       StatusLed_Update();    // 更新三色状态指示灯
     if (ms_cnt_2 >= 100)
-      { // 判断是否计时到100ms
-        ms_cnt_2 = 0;   // 计时清零
-        Auto_FAN();     // 风扇转速控制
+      {                     // 判断是否计时到100ms
+        ms_cnt_2 = 0;       // 计时清零
+        Auto_FAN();         // 风扇转速控制
       }
 
       if (ms_cnt_1 >= 500)
-        { // 判断是否计时到500ms
-        ms_cnt_1 = 0;                                   // 计时清零
-        Update_Flash();                                 // 更新Flash存储内容
+        {                   // 判断是否计时到500ms
+        ms_cnt_1 = 0;       // 计时清零
+        Update_Flash();     // 更新Flash存储内容
       }
     }
-    UF4Transport_RunTask(); // 通信后台任务，处理挂起发送和原始数据流
+    UF4Transport_RunTask();  // 通信后台任务，处理挂起发送和原始数据流
+
   }
   /* USER CODE END 3 */
 }
@@ -252,10 +254,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     ms_cnt_1++;
     ms_cnt_2++;
     ms_cnt_4++;
+    HAL_IWDG_Refresh(&hiwdg); // 在固定节拍中断里喂狗，避免主循环被快环抢占时漏喂
   }
   if (htim->Instance == TIM7){ // 定时器TIM3，中断时间5ms
 
     ADCSample(); // ADC采样滤波函数
+    InputVoltageProtect(); // 输入电压启动/欠压保护
     ShortOff();  // 短路保护
     OTP();       // 过温保护
     OVP();       // 输出过压保护

@@ -172,7 +172,6 @@ RAMFUNC void StateM(void){
  * 完成参数初始化后切换到等待状态。
  */
 void StateMInit(void){
-    ValInit();    // 相关参数初始化
     DF.SMFlag = Wait;    // 状态机跳转至等待软启状态
 }
 /**
@@ -213,15 +212,69 @@ void ValInit(void){
 void StateMRun(void){}
 
 /**
+ * @brief 关闭输出并复位控制上下文。
+ * 在上级关闭输出或进入等待态时清空模式与参考值，避免下次启动沿用旧状态。
+ */
+void PowerControl_DisableOutput(void){
+    DF.PWMENFlag = 0;
+    DF.BBFlag = NA;
+    DF.BBModeChange = 0;
+    CVCC_Mode = CV;
+
+    CtrValue.Vout_ref = 0;
+    CtrValue.Vout_SSref = 0;
+    CtrValue.Vout_SETref = 0;
+    CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
+    CtrValue.BUCKMaxDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
+    CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
+    CtrValue.BoostMaxDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
+
+    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
+    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, BSP_POWER_HRTIM_PERIOD_TICK >> 1);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, BSP_POWER_BOOST_DUTY_MIN_TICK);
+}
+
+/**
+ * @brief 输入电压保护。
+ * 待机时只有输入电压达到启动阈值才允许启动；运行中欠压则直接进入故障状态。
+ */
+void InputVoltageProtect(void){
+    static uint8_t vin_uvp_hold_cnt = 0;
+
+    if (VIN >= POWER_CTRL_VIN_START_MIN){
+        vin_uvp_hold_cnt = 0;
+        if (getRegBits(DF.ErrFlag, F_SW_VIN_UVP)){
+            clrRegBits(DF.ErrFlag, F_SW_VIN_UVP);
+            if (DF.SMFlag == Err && DF.ErrFlag == F_NOERR){
+                DF.SMFlag = Wait;
+            }
+        }
+        return;
+    }
+
+    if ((DF.SMFlag == Run || DF.SMFlag == Rise) && VIN < POWER_CTRL_VIN_RUN_MIN){
+        vin_uvp_hold_cnt++;
+        if (vin_uvp_hold_cnt >= 3U){
+            vin_uvp_hold_cnt = 0U;
+            PowerControl_DisableOutput();
+            DF.OUTPUT_Flag = 0U; // 欠压后锁定输出关闭，避免输入恢复后自动反复重启
+            setRegBits(DF.ErrFlag, F_SW_VIN_UVP);
+            DF.SMFlag = Err;
+        }
+    }
+    else{
+        vin_uvp_hold_cnt = 0;
+    }
+}
+
+/**
  * @brief 处理故障状态。
  * 关闭 PWM 输出，并在故障清除后允许状态机回到等待态。
  */
 void StateMErr(void){
-    // 关闭PWM
-    DF.PWMENFlag = 0;
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
-    DF.BBFlag = NA;                                                              // 切换运行模式
+    PowerControl_DisableOutput();
     // 若故障消除跳转至等待重新软启
     if (DF.ErrFlag == F_NOERR){
         DF.SMFlag = Wait;
@@ -235,11 +288,11 @@ void StateMWait(void){
     // 计数器定义
     static uint16_t CntS = 0;
     static uint32_t IinSum = 0, IoutSum = 0;
-    DF.PWMENFlag = 0;    // 关PWM
+    PowerControl_DisableOutput();
     CntS++; // 计数器累加
     if (CntS > 200){    // 等待1S，进入启动状态
         CntS = 200;
-        if (DF.ErrFlag == F_NOERR && DF.OUTPUT_Flag == 1){
+        if (DF.ErrFlag == F_NOERR && DF.OUTPUT_Flag == 1 && VIN >= POWER_CTRL_VIN_START_MIN){
             CntS = 0;            // 计数器清0
             IinSum = 0;
             IoutSum = 0;
@@ -507,6 +560,12 @@ RAMFUNC void BBMode(void){
         VIN_ADC = VIN_ADC_SUM / 5;
         VIN_ADC_SUM = 0;
         VIN_ADC_Count = 0;
+    }
+
+    if (DF.OUTPUT_Flag == 0U || DF.PWMENFlag == 0U || CtrValue.Vout_ref <= 0){
+        DF.BBFlag = Buck;
+        DF.BBModeChange = 0;
+        return;
     }
 
     // 判断当前模块的工作模式

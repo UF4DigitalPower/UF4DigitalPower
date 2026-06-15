@@ -34,9 +34,9 @@
 #define POWER_CTRL_DEFAULT_OCP_SET           10.0F  // 默认过流值 10A
 
 
-// 设置欠压阈值死区
-#define POWER_CTRL_VIN_UVLO_START         5.5F  // 输入电压下降到这个值就开始启动
-#define POWER_CTRL_VIN_UVLO_STOP          5.2F  // 输入电压上升到这个值就停止启动
+// 输入欠压阈值
+#define POWER_CTRL_VIN_START_MIN          5.0F  // 输入电压达到该值及以上才允许启动
+#define POWER_CTRL_VIN_RUN_MIN            4.8F  // 运行中输入电压低于该值则判定为输入欠压
 
 #define POWER_CTRL_VIN_OVP                5.0F  // 输入过压阈值
 
@@ -265,6 +265,8 @@ void StateMRise(void);
 void StateMRun(void);
 void StateMErr(void);
 void BBMode(void);
+void PowerControl_DisableOutput(void);
+void InputVoltageProtect(void);
 
 void ValInit(void);
 void OTP(void);

@@ -360,7 +360,7 @@ static void s_UF4Transport_ApplyWriteRegisters(void)
     DF.OUTPUT_Flag = (uint8_t)(s_id_power_state != 0U ? 1U : 0U);
     if(DF.OUTPUT_Flag == 0U)
     {
-        DF.PWMENFlag = 0U;
+        PowerControl_DisableOutput();
         if(DF.SMFlag != Err)
         {
             DF.SMFlag = Wait;
