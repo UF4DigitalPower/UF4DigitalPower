@@ -33,10 +33,10 @@
 #define POWER_CTRL_DEFAULT_OVP_SET           45.0F  // 默认过压值 45v
 #define POWER_CTRL_DEFAULT_OCP_SET           10.0F  // 默认过流值 10A
 
+#define POWER_CTRL_FAN_MIN_RUN_DUTY          35U    // 风扇非零运行时的最小占空比
+#define POWER_CTRL_FAN_STARTUP_KICK_DUTY     100U   // 风扇启动强启占空比
+#define POWER_CTRL_FAN_STARTUP_KICK_MS       300U   // 风扇启动强启持续时间
 
-// 输入欠压阈值
-#define POWER_CTRL_VIN_START_MIN          5.0F  // 输入电压达到该值及以上才允许启动
-#define POWER_CTRL_VIN_RUN_MIN            4.8F  // 运行中输入电压低于该值则判定为输入欠压
 
 #define POWER_CTRL_VIN_OVP                5.0F  // 输入过压阈值
 
@@ -87,7 +87,9 @@
 
 #define BSP_POWER_BUCK_DUTY_MIN_TICK         136U
 #define BSP_POWER_BUCK_DUTY_MAX_TICK         25568U
+#define BSP_POWER_BUCK_DUTY_BOOST_STEP_TICK  32U
 #define BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK    21760U
+#define BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK   32U
 
 #define BSP_POWER_BOOST_DUTY_MIN_TICK        136U
 #define BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK   1800U
@@ -219,6 +221,10 @@ extern volatile float MAX_VOUT_OCP_VAL;         // 输出过流保护阈值
 extern volatile float powerEfficiency;			// 电源转换效率
 extern volatile _CVCC_Mode CVCC_Mode;			// 电源模式
 extern struct _SET_Value SET_Value;				// 设置参数
+extern volatile uint8_t g_mode_switch_inject_valid;   // 模式切换占空注入有效标志
+extern volatile int16_t g_mode_switch_buck_duty;      // 模式切换预置 Buck 占空
+extern volatile int16_t g_mode_switch_boost_duty;     // 模式切换预置 Boost 占空
+extern volatile int32_t g_mode_switch_u_seed;         // 模式切换预置环路输出种子
 
 /*
  * 设置寄存器的位
@@ -265,8 +271,8 @@ void StateMRise(void);
 void StateMRun(void);
 void StateMErr(void);
 void BBMode(void);
+void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t vout_ref);
 void PowerControl_DisableOutput(void);
-void InputVoltageProtect(void);
 
 void ValInit(void);
 void OTP(void);
@@ -281,7 +287,6 @@ void Update_Flash(void);
 void Read_Flash(void);
 void float_to_bytes(float value, uint8_t *bytes);
 float bytes_to_float(uint8_t *bytes);
-void Auto_FAN(void);
 
 
 #endif //FUNCTION1_H

@@ -264,11 +264,7 @@ static uint16_t s_UF4Transport_GetFanSpeedPermille(void)
 
 static uint16_t s_UF4Transport_GetFanSetPermille(void)
 {
-    if(s_uf4_transport.fan_manual_enable != 0U)
-    {
-        return s_uf4_transport.fan_set_permille;
-    }
-    return s_UF4Transport_GetFanSpeedPermille();
+    return s_uf4_transport.fan_set_permille;
 }
 
 static void s_UF4Transport_UpdateControlReferenceFromSetting(void)
@@ -574,12 +570,16 @@ void UF4Transport_Init(void)
 
     memset(&s_uf4_transport, 0, sizeof(s_uf4_transport));
     s_uf4_transport.selected_port = s_UF4Transport_GetFixedPort();
+    s_uf4_transport.fan_manual_enable = 1U;
+    s_uf4_transport.fan_set_permille = 1000U;
+    s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
 
     for(i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
     {
         s_uf4_transport.channels[i].port = (UF4Transport_Port)i;
     }
 
+    FAN_PWM_set(100U);
     s_UF4Transport_UpdateReadRegisters();
     UF4_IDTableBind(s_uf4_id_table, sizeof(s_uf4_id_table) / sizeof(s_uf4_id_table[0]));
     UF4_Init(s_UF4Transport_Uf4Tx, NULL);

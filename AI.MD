@@ -60,3 +60,63 @@ UF4DigitalPower 是基于 STM32G474 的数字电源固件。当前通信协议�
   - HRTIM 快环：1 级
   - TIM7 状态/保护节拍：2 级
   - TIM6/TIM16 后台节拍：3 级
+
+## 2026-06-15 风扇控制说明
+
+- 已删除固件内部 `Auto_FAN()` 自动温控逻辑，风扇完全改为上位机控制。
+- UF4 风扇协议语义统一为：
+  - `FAN_SET_VALUE = 0..1000`
+  - 单位为千分比，`0` 表示关闭，`1000` 表示满速
+- 固件默认值为上电满速：
+  - `UF4Transport_Init()` 默认把 `fan_set_permille` 设为 `1000`
+  - 若上位机尚未下发风扇命令，风扇保持满速运行
+- `FAN_PWM_set()` 已补最小启动逻辑：
+  - 非零目标占空低于 35% 时，抬到 35%
+  - 从静止到非零目标时，先 100% 强启约 300ms，再回目标占空
+  - PWM 比较值会钳到 `TIM8` 周期以内，避免满占空边界歧义
+
+## 2026-06-15 输入欠压说明
+
+- 已删除固件内部输入欠压保护。
+- 不再要求 `VIN >= 5V` 才允许启动。
+- 运行过程中也不再因输入欠压进入 `Err` 或自动关输出。
+
+## 2026-06-15 Buck 模式支路占空对齐
+
+- 对照 `E:\PROJECT_C\Buck-Boost-Digital-Power` 示例工程后，已把 `Buck` 模式下的 `BoostDuty` 固定值对齐为同步整流安全占空。
+- 当前实现改为：
+  - `Buck` 模式：`CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK`
+- 本次只对齐 `Buck` 模式，不调整 `Mix` 模式下限，避免再次影响 `15V -> 15V` 临界区行为。
+
+## 2026-06-15 Mix 模式平滑进入
+
+- `Mix` 模式保留 `BuckDuty` 目标为同步固定占空，但不再一步硬切到目标值。
+- 当前实现改为：
+  - `BuckDuty` 从当前值按步进 `BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK` 平滑逼近 `BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK`
+  - 同时仍受 `CtrValue.BUCKMaxDuty` 限制
+- 目的：
+  - 避免 `15V -> 15V` 这类临界区一进入 `Mix` 就瞬时把 Buck 支路拉到 80%，导致输入被猛拉低
+
+## 2026-06-15 Boost 模式平滑进入
+
+- `Boost` 模式下的 `BuckDuty` 不再一步硬切到 `BSP_POWER_BUCK_DUTY_MAX_TICK`。
+- 当前实现改为：
+  - `BuckDuty` 从当前值按步进 `BSP_POWER_BUCK_DUTY_BOOST_STEP_TICK` 平滑逼近 `BSP_POWER_BUCK_DUTY_MAX_TICK`
+  - 同时仍受 `CtrValue.BUCKMaxDuty` 限制
+- 目的：
+  - 避免临界区进入 `Boost` 时，Buck 支路瞬时固定到高占空，导致输入再次被猛拉低
+
+## 2026-06-15 TI 切模占空注入
+
+- 参考 TI `SLYT765` 多模态四开关 Buck-Boost 控制思路，新增“切模前计算目标 duty 并注入”的机制。
+- 当前实现：
+  - `Buck` 目标 duty：`D = Vout / Vin`
+  - `Mix` 目标 duty：`D = Vout / (Vin + Vout)`
+  - `Boost` 目标 duty：`D = (Vout - Vin) / Vout`
+- 当 `BBMode()` 判断模式变化时：
+  - 先按目标模式公式计算占空
+  - 生成对应 `BuckDuty/BoostDuty`
+  - 同时生成快环输出种子 `u_seed`
+  - 下一次快环处理 `BBModeChange` 时直接装载这些值
+- 目的：
+  - 避免模式切换仍沿用旧模式积分，导致 duty 需要从极端值猛跳到新模式目标附近

@@ -101,10 +101,19 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         u1 = 0;
         VErr1 = 0;
         VErr2 = 0;
+        VErr0 = 0;
         I_Integral = 0;
         i0 = 0;
+        IErr0 = 0;
         IErr1 = 0;
         CVCC_Mode = CV;
+        if (g_mode_switch_inject_valid != 0U){
+            CtrValue.BuckDuty = g_mode_switch_buck_duty;
+            CtrValue.BoostDuty = g_mode_switch_boost_duty;
+            u0 = g_mode_switch_u_seed;
+            u1 = g_mode_switch_u_seed;
+            g_mode_switch_inject_valid = 0U;
+        }
         DF.BBModeChange = 0;
     }
 
@@ -131,7 +140,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             u1 = u0;
 
             // 环路输出赋值
-            CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK; // BOOST上管固定占空比94%，下管6%
+            CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK; // 参考示例工程，Buck模式下Boost支路保持同步整流安全占空
             CtrValue.BuckDuty = (u0 >> 8) * 3;    // 电压环占空比输出
 
             // 环路输出最大最小占空比限制
@@ -142,6 +151,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             break;
         }
         case Boost:{ // Boost模式
+            int32_t boost_buck_target = BSP_POWER_BUCK_DUTY_MAX_TICK;
             // 调用PID环路计算公式（参照PID环路计算文档）
             u0 = u1 + VErr0 * BOOSTPIDb0 + VErr1 * BOOSTPIDb1 + VErr2 * BOOSTPIDb2;
             // 历史数据幅值
@@ -150,7 +160,28 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             u1 = u0;
 
             // 环路输出赋值
-            CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MAX_TICK;  // BUCK上管固定占空比94%
+            // BOOST 模式下不要一步把 Buck 支路硬切到 94%，否则进入 Boost 临界区时
+            // 容易出现和 MIX 类似的输入瞬时下拉。
+            if (CtrValue.BuckDuty < boost_buck_target){
+                CtrValue.BuckDuty = (int16_t)(CtrValue.BuckDuty + BSP_POWER_BUCK_DUTY_BOOST_STEP_TICK);
+                if (CtrValue.BuckDuty > boost_buck_target){
+                    CtrValue.BuckDuty = (int16_t)boost_buck_target;
+                }
+            }
+            else if (CtrValue.BuckDuty > boost_buck_target){
+                CtrValue.BuckDuty = (int16_t)(CtrValue.BuckDuty - BSP_POWER_BUCK_DUTY_BOOST_STEP_TICK);
+                if (CtrValue.BuckDuty < boost_buck_target){
+                    CtrValue.BuckDuty = (int16_t)boost_buck_target;
+                }
+            }
+
+            if (CtrValue.BuckDuty > CtrValue.BUCKMaxDuty){
+                CtrValue.BuckDuty = CtrValue.BUCKMaxDuty;
+            }
+            if (CtrValue.BuckDuty < BSP_POWER_BUCK_DUTY_MIN_TICK){
+                CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
+            }
+
             CtrValue.BoostDuty = (u0 >> 8) * 3; // 电压环占空比输出
 
             // 环路输出最大最小占空比限制
@@ -161,6 +192,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             break;
         }
         case Mix:{ // Mix模式
+            int32_t mix_buck_target = BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK;
             // 调用PID环路计算公式
             u0 = u1 + VErr0 * BOOSTPIDb0 + VErr1 * BOOSTPIDb1 + VErr2 * BOOSTPIDb2;
             // 历史数据幅值
@@ -170,7 +202,28 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             IErr1 = IErr0;
 
             // 环路输出赋值
-            CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK; // BUCK上管固定占空比80%
+            // MIX 模式下不要一步把 Buck 支路硬切到 80%，否则在临界区容易把输入瞬时拉垮。
+            // 这里从当前占空平滑逼近目标，同时仍受软启动占空上限约束。
+            if (CtrValue.BuckDuty < mix_buck_target){
+                CtrValue.BuckDuty = (int16_t)(CtrValue.BuckDuty + BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK);
+                if (CtrValue.BuckDuty > mix_buck_target){
+                    CtrValue.BuckDuty = (int16_t)mix_buck_target;
+                }
+            }
+            else if (CtrValue.BuckDuty > mix_buck_target){
+                CtrValue.BuckDuty = (int16_t)(CtrValue.BuckDuty - BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK);
+                if (CtrValue.BuckDuty < mix_buck_target){
+                    CtrValue.BuckDuty = (int16_t)mix_buck_target;
+                }
+            }
+
+            if (CtrValue.BuckDuty > CtrValue.BUCKMaxDuty){
+                CtrValue.BuckDuty = CtrValue.BUCKMaxDuty;
+            }
+            if (CtrValue.BuckDuty < BSP_POWER_BUCK_DUTY_MIN_TICK){
+                CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
+            }
+
             CtrValue.BoostDuty = (u0 >> 8) * 3; // 电压环占空比输出
 
             // 环路输出最大最小占空比限制

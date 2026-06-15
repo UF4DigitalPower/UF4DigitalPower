@@ -119,10 +119,6 @@ int main(void)
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
   DF.SMFlag = Init;                         // 初始化状态机
-  // OLED_Init();                           // OLED初始化
-  // OLED_Clear();                          // 清除OLED屏显示缓冲区
-  // OLED_ShowChinese(40, 24, "启动中");     // 在屏幕中间显示 启动中
-  // OLED_Update();                         // 更新OLED显示内容
 
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3); // 启动定时器8和通道3的PWM输出
   FAN_PWM_set(100);                         // 设置风扇转速为100%
@@ -154,7 +150,6 @@ int main(void)
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_D);              // 开启HRTIM波形计数器
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP); // 开启HRTIM定时器D的中断
 
-  FAN_PWM_set(0);                           // 设置风扇转速为0
   StatusLed_Init();                         // 初始化三色状态指示灯
   /* USER CODE END 2 */
 
@@ -169,11 +164,6 @@ int main(void)
       {                      // 判断是否计时到50ms
       ms_cnt_4 = 0;          // 计时清零
       StatusLed_Update();    // 更新三色状态指示灯
-    if (ms_cnt_2 >= 100)
-      {                     // 判断是否计时到100ms
-        ms_cnt_2 = 0;       // 计时清零
-        Auto_FAN();         // 风扇转速控制
-      }
 
       if (ms_cnt_1 >= 500)
         {                   // 判断是否计时到500ms
@@ -259,7 +249,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM7){ // 定时器TIM3，中断时间5ms
 
     ADCSample(); // ADC采样滤波函数
-    InputVoltageProtect(); // 输入电压启动/欠压保护
     ShortOff();  // 短路保护
     OTP();       // 过温保护
     OVP();       // 输出过压保护
