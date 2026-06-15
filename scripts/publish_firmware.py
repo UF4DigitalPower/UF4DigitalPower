@@ -86,7 +86,7 @@ def main() -> None:
     parser.add_argument("--device", help="MCU device string (overrides default)")
     parser.add_argument("--hardware", help="Hardware board string (overrides default)")
     parser.add_argument("--channel", default="stable", choices=["stable", "beta"], help="Release channel")
-    parser.add_argument("--min-client", default="0.4.0", dest="min_client", help="Minimum required client version")
+    parser.add_argument("--min-client", default="1.0.0", dest="min_client", help="Minimum required client version")
     parser.add_argument("--notes", nargs="*", default=[], help="Release notes (one per entry)")
     parser.add_argument("--storage", default="./storage", help="Root storage directory (default: ./storage)")
     parser.add_argument("--set-latest", action="store_true", help="Update latest.json to this version")
