@@ -26,8 +26,6 @@
 #include <stdint.h>
 #include <string.h>
 
-// 数字后面加F表示使用单精度浮点数类型，C语言默认使用双精度浮点数类型，硬件浮点运算只支持单精度浮点数
-
 volatile uint16_t ADC1_RESULT[4] = {0, 0, 0, 0};                   // ADC采样外设到内存的DMA数据保存寄存器
 
 volatile float MAX_OTP_VAL;                                        // 过温保护阈值

@@ -1,371 +1,1509 @@
-### 硬件特性
+# F4CP 与 UF4DigitalPower 项目说明
 
-- 主控平台：STM32G474
-- 输出范围：0.5V - 50V
-- 输出电流范围：0A - 10A
-- 控制方式：电压环 + 电流环双闭环 PID
-- 功率驱动：支持互补 PWM 输出与死区控制
-- 数据存储：外接 SPI Flash，用于保存 PID 参数和系统状态
-- 通信接口：UF4COM V3，支持 USB CDC、USART1、USART2 固定端口编译选择
-- 保护能力：支持过压、过流、过温等参数管理与保护阈值设定
+F4CP 数字电源项目分为两个部分：
 
-### 采样与测量说明
+1. 下位机硬件：`E:\PROJECT_C\UF4DigitalPower`
+2. 上位机软件：`E:\PROJECT_DPOWER\F4CP`
+# F4CP 与 UF4DigitalPower 项目说明
 
-- 电压采样采用分压15倍方式进入 ADC，并由软件还原真实电压值。
-- 电流采样基于 7mΩ 分流电阻、20 倍运放增益和 1.65V 中点偏置；高于 1.65V 视为反向电流并按 0A 处理，1.65V 到 0V 方向换算为正向电流。
-- 固件侧支持对输入输出电压、电流、温度等数据进行实时采集和上报。
+F4CP 数字电源项目分为两个部分：
 
-### 软件分层建议
+1. [下位机固件](https://update.hepi.ng) 可以搭配上位机使用，也可以独立使用，提供基本的固件下载功能
+2. [上位机软件](https://github.com/UF4OVER/UF4DigitalPower) 此仓库
+3. 其实作者想过通过硬件上位机来代替软件上位机，但是软硬件的复杂度还比较高，作者没办法同时兼顾，所以先把软件上位机做好了，硬件上位机就先放一放了。
 
-- `BSP`
-  - 负责 ADC 原始结果、PWM 占空边界、GPIO、风扇、温度、板级缩放参数。
-  - 对外提供 `VIN/VOUT/IIN/IOUT/TEMP` 的物理量换算接口。
-- `CTRL`
-  - 负责状态机、运行模式切换、故障管理、软启动、闭环控制。
-  - 不直接操作寄存器，只调用 `BSP` 和 `HAL` 封装接口。
-- `APP`
-  - 负责上位机命令、参数下发、遥测上报、参数存储与恢复。
+项目中借鉴道到的其他项目或者公开文档
 
-推荐的数据流是：
+- 通信协议 [UF4COM V3](https://github.com/UF4OVER/UF4COM)
+- DAPLINK 固件 [DAPLink](https://github.com/UF4OVER/DAPLINK_STM32F103XB)
+- 参考代码 [Buck-Boost-Digital-Power](https://github.com/zeruns/Synchronous-Rectification-Buck-Boost-Digital-Power-Supply-Based-on-STM32)
+- TI官方文档 [Multimode control for a four-switch buck-boost converter](https://www.ti.com/lit/an/slyt765/slyt765.pdf?ts=1781482881151)
+- ST官方文档 [Buck-boost converter using the STM32F334 Discovery kit](https://www.st.com/resource/en/application_note/an4449-buckboost-converter-using-the-stm32f334-discovery-kit-stmicroelectronics.pdf)
 
-1. `ADC/HRTIM` 完成一次采样触发。
-2. `BSP` 更新 `ADC_RESULT` 和测量值结构。
-3. `CTRL` 根据当前状态和模式执行一次快环。
-4. 电压外环按较低频率执行，更新电流给定。
-5. `APP` 异步处理通信和参数管理。
+> 注意： 由于焊接的水平不同和实际硬件的差异，作者不对任何人使用本项目造成的任何直接或间接损失负责，使用前请务必做好充分的风险评估和安全防护措施。
+---
 
-### 代码命名规范
+## 目录
 
-用户代码遵循统一的模块前缀命名。CubeMX/HAL 生成的 `MX_*`、`HAL_*`、`CDC_*`、IRQ handler 等接口保持原样，不做重命名；只在 `USER CODE` 区调用用户层接口。
+- [1. 项目总览](#1-项目总览)
+- [2. 硬件介绍](#2-硬件介绍)
+- [3. 下位机 C 代码解析](#3-下位机-c-代码解析)
+- [4. 借鉴代码与参考资料](#4-借鉴代码与参考资料)
+- [5. F4CP 上位机介绍](#5-f4cp-上位机介绍)
+- [6. 项目结构](#6-项目结构)
+- [7. 快速开始](#7-快速开始)
 
-公开函数采用：
+---
 
-```c
-MODULE_getAppObjectUnit();
-MODULE_setAppObjectUnit();
-MODULE_initAppObject();
-MODULE_runAppObject();
-MODULE_feedAppObject();
-```
+## 1. 项目总览
 
-示例：
+本项目是一套基于 STM32G474 的双向四管升降压数字电源
+- 设计输入: `5V - 40V ` `10AMAX`
+- 输出范围: `0.5V - 40V`，
+- 功率拓扑: 四开关同步整流 Buck-Boost
+- 正反向电流均可以到0-10A
 
-```c
-BSP_getAppVinVoltage();
-BSP_setAppInjectedRaw();
-POWER_getAppSnapshot();
-POWER_setAppEnabled();
-UF4_InputByte();
-UF4Transport_OnUsbCdcRx();
-```
 
-静态函数采用 `s_MODULE_` 前缀，避免使用 C 标准保留的前导下划线命名：
+优点：搭配上位机可以实现非常灵活的控制、监控和调试，上位机提供图表显示、参数调整、模式切换和固件升级等功能，无需任何烧录器即可通过 USB 直接控制和升级固件。
+> 板载了DAPLINK(STM32F103)，如果您需要在线烧录固件，你还需要将[DAPLink固件](https://github.com/UF4OVER/DAPLINK_STM32F103XB)烧录到STM32F103上
 
-```c
-static float s_BSP_getAppAdcRawVoltage(...);
-static uint16_t s_UF4Transport_FloatToMilliU16(...);
-static uint32_t s_POWER_getAppU32Nonnegative(...);
-```
+> 注意: 作者使用的MOS可能不够理想 ，因此在高压低压两端的效率和稳定性可能不够好，你在可以选择更适合的MOSFET以提升性能。
 
-宏定义使用全大写，并带模块前缀和单位：
+> 实物图
+> ![IMG_20260604_213728.jpg](https://img.hepi.ng/v2/NCb81Dz.jpeg)
+> ![IMG_20260604_213704.jpg](https://img.hepi.ng/v2/VqxCobD.jpeg)
+> ![IMG_20260616_153259.jpg](https://img.hepi.ng/v2/3x1zBgu.jpeg)
+> ![86ec51f830c4e1613f834f868d97668d.jpg](https://img.hepi.ng/v2/NemKAHw.jpeg)
 
-```c
-#define BSP_POWER_ADC1_REGULAR_COUNT  4U
-#define POWER_CTRL_STATE_FLAG_RUN     0x08U
-#define UF4_MAX_DATA_LEN  255U
-```
+## 2. 硬件介绍
 
-类型名使用 `MODULE_object_t`，枚举值和宏一样使用全大写模块前缀：
+> 当前作者测试使用到的硬件参数及其计算详情见 [计算记录](https://blog.hepi.ng/posts/overview_of_hardware_parameters_and_loops)
+### 2.1 主控与系统定位
 
-```c
-typedef struct
-{
-    uint32_t input_voltage_mv;
-} POWER_ctrlSnapshot_t;
+- 主控 MCU: `STM32G474CBT6`
+- 板载DEBUG: `STM32F103C8T6（DAPLink）`
+- 栅极驱动器: `UCC27211`
+- 辅助电源1: VIN->5V `LMR36520F`  用于运放，基准电压和风扇供电
+- 辅助电源2: 5V->3V3 `LM1117-3.3`  用于MCU 与外设控制逻辑供电
+- 辅助电源3: 5V->11.1V `SY7304DBC` 用于栅极驱动器供电
 
-typedef enum
-{
-    POWER_CTRL_STAGE_BUCK = 1U,
-} POWER_ctrlStage_t;
-```
+当前板卡定位是四开关同步整流 Buck-Boost 数字电源控制板，下位机负责控制与保护，上位机负责人机交互、调试、监控和升级。
 
-全局变量必须尽量少，使用 `g_MODULE_object`；静态文件变量使用 `s_MODULE_object`：
+### 2.2 功率级与工作模式
 
-```c
-extern volatile BSP_adcResult_t g_BSP_adcResult;
-static POWER_ctrlSettings_t s_POWER_ctrlSettings;
-```
+当前功率拓扑是四开关 Buck-Boost，固件中划分三种模式：
 
-变量、结构体字段使用小写蛇形，并在名称中保留单位：`vin_mv`、`iout_ma`、`duty_tick`、`temperature_mc`。协议契约中的 `CMD`、`TV`、`CRC` 等缩写在宏和枚举中保持全大写。
-
-### 当前通信协议
-
-固件当前使用 `E:\PROJECT_C\UF4COM` 中的 UF4COM V3 协议核心，旧的 TVL TLV/Modbus CRC 协议已经从固件源码中移除。
-
-- 帧头：`AA 55`
-- CRC：CRC16-CCITT，覆盖 `SEQ FLAGS CMD LEN DATA`
-- 数据格式：固定 3 字节 TV，`ID VALUE_H VALUE_L`
-- 接收入口：USB CDC 调用 `UF4Transport_OnUsbCdcRx()`，USART DMA 由 `UF4Transport_RunTask()` 轮询喂给 `UF4_InputBuffer()`
-- 发送入口：UF4COM 通过 `UF4_Init()` 注入的回调调用 `UF4Transport_SendBytes()`
-- 数据绑定：`Core/Src/uf4_transport.c` 绑定 README 协议表中的全部 `UF4_ID_*`，写入类 ID 会同步应用到电源设置、输出开关和风扇
-
-### 运行状态机
-
-建议主状态机至少包含以下状态：
-
-- `POWER_STATE_IDLE`
-  - PWM 关闭，输出禁止。
-  - 等待使能命令和输入条件满足。
-- `POWER_STATE_PRECHARGE`
-  - 可选状态。
-  - 用于输入有效性检查、采样稳定等待、偏置建立、继电器或前级准备。
-- `POWER_STATE_SOFTSTART`
-  - 从零占空比或安全占空比开始。
-  - 电压给定或电流给定缓慢爬升。
-- `POWER_STATE_RUN`
-  - 正常闭环运行。
-  - 根据输入输出关系在 `BUCK / MIX / BOOST` 之间切换。
-- `POWER_STATE_FAULT`
-  - 关闭 PWM。
-  - 锁存故障码，等待手动清除或满足自动恢复条件。
-
-状态转移建议：
-
-- `IDLE -> PRECHARGE`
-  - 收到使能命令。
-  - 输入电压正常。
-  - 无锁存故障。
-- `PRECHARGE -> SOFTSTART`
-  - ADC 偏置稳定。
-  - 温度正常。
-  - 关键传感器在线。
-- `SOFTSTART -> RUN`
-  - 输出进入目标附近。
-  - 没有过流、过压、欠压等异常。
-- `任意状态 -> FAULT`
-  - 硬件过流、软件过流、输出过压、输入欠压、过温、驱动异常。
-- `FAULT -> IDLE`
-  - 故障被确认清除。
-  - 等待重新使能。
-
-### 故障管理建议
-
-故障建议分为两层：
-
-- `硬件快速故障`
-  - 比如周期级过流。
-  - 直接通过 `COMP/BKIN/HRTIM FAULT` 关断 PWM。
-  - 软件只负责记录故障来源和复位流程。
-- `软件慢速故障`
-  - 输入欠压
-  - 输出过压
-  - 持续过流
-  - 过温
-  - 采样异常
-  - 模式切换超时
-
-建议故障码单独做位标志：
-
-```c
-typedef enum
-{
-    POWER_FAULT_NONE       = 0,
-    POWER_FAULT_OCP_HW     = 1u << 0,
-    POWER_FAULT_OCP_SW     = 1u << 1,
-    POWER_FAULT_OVP_OUT    = 1u << 2,
-    POWER_FAULT_UVP_IN     = 1u << 3,
-    POWER_FAULT_OTP        = 1u << 4,
-    POWER_FAULT_SENSOR     = 1u << 5,
-    POWER_FAULT_MODE       = 1u << 6,
-} power_fault_t;
-```
-
-故障处理原则：
-
-- 一旦进入 `FAULT`，立刻关闭 PWM 输出。
-- 锁存故障字，不要只保留最后一个故障。
-- 区分 `可自动恢复` 和 `需人工清除` 的故障。
-- 过流和输出过压建议默认人工清除。
-
-### 运行模式划分
-
-四开关 Buck-Boost 建议分为三种运行模式：
-
-- `BUCK`
-  - `VIN` 明显高于 `VOUT`
-  - 由输入侧半桥主调制
-  - 输出侧半桥作为同步整流或固定导通策略
-- `BOOST`
-  - `VIN` 明显低于 `VOUT`
-  - 由输出侧半桥主调制
-  - 输入侧半桥作为同步整流或固定导通策略
-- `MIX`
-  - `VIN` 接近 `VOUT`
-  - 两侧共同参与调制
+- `Buck`
+  - 输入明显高于输出
+  - Buck 桥主调制
+  - Boost 桥承担同步整流或固定导通辅助角色
+- `Mix`
+  - 输入电压接近输出电压
+  - 两侧桥臂共同参与调制
   - 用于平滑跨越 Buck 和 Boost 边界
+- `Boost`
+  - 输入明显低于输出
+  - Boost 桥主调制
+  - Buck 桥承担同步整流或固定导通辅助角色
 
-结合当前板子的采样定义：
+- ![功率级电路图](https://img.hepi.ng/v2/WKNQnxV.png "功率级电路图")
 
-- `BUCK` 模式内环电流使用 `IOUT` 近似电感电流。
-- `BOOST` 模式内环电流使用 `IIN` 近似电感电流。
-- `MIX` 模式可优先沿用 `IIN`，或根据实验结果做加权切换。
+当前 IOC 与固件约定中：
 
-### 模式切换条件建议
+- `HRTIM Timer A` 对应 Buck 桥
+- `HRTIM Timer D` 对应 Boost 桥
+- `PA8/PA9` 为一组互补 PWM
+- `PB14/PB15` 为另一组互补 PWM
 
-不要用单点比较直接切模式，必须加迟滞。
+### 2.3 栅极驱动与 Bootstrap 特性
 
-定义：
+项目使用 `UCC27211` 半桥驱动器。该器件高边驱动采用 bootstrap 供电思路：
 
-```c
-vin_to_vout_ratio = VIN / VOUT;
-```
+- 高边供电使用 `HB-HS`
+- 需要 `HB-HS` 自举电容,使用100nF的贴片电容
+- 需要 `HS` 周期性回到较低电位，bootstrap 电容才能补电
 
-建议切换门限：
+这意味着在 `Mix` 或 `Boost` 模式中，如果某一侧高边长期接近常开，不给 bootstrap 刷新窗口，就可能出现高边驱动电压下跌，进而表现为：
 
-- 进入 `BUCK`
-  - `VIN > VOUT * 1.08`
-- 进入 `BOOST`
-  - `VIN < VOUT * 0.92`
-- 进入 `MIX`
-  - `0.92 <= VIN / VOUT <= 1.08`
+- 模式不稳定
+- 输入被突然拉低
+- 无法顺利进入 `Mix` / `Boost`
+- 模式反复抖动
 
-也可以用绝对压差：
+因此控制代码中不能只看理论占空比，还必须兼顾驱动器刷新条件。
+- ![6f4cab3df3eb4a79ca3ce2c1fd22781c.png](https://img.hepi.ng/v2/ajeCH7l.png)
+### 2.4 采样链路
 
-- `VIN - VOUT > +2V` 进入 `BUCK`
-- `VIN - VOUT < -2V` 进入 `BOOST`
-- `|VIN - VOUT| <= 2V` 进入 `MIX`
+当前固件的主要采样量如下：
 
-切换时建议增加以下保护：
+- `VIN`
+- `IIN`
+- `VOUT`
+- `IOUT`
+- `Board TEMP1`
+- `Board TEMP2`
+- `CPU TEMP`
 
-- 连续满足门限 `N` 次再切换。
-- 切换瞬间冻结积分项或限幅积分项。
-- 切换后进入一个短暂的过渡窗口，限制占空比变化率。
-- 如果切换后短时间内电流异常，立即退回 `FAULT` 或回退上一个模式。
+采样与换算特性：
 
-### 控制环执行建议
+- 电压采样采用分压进入 ADC，再由软件恢复真实电压值，使用 GS8558-SR 运放
+- 电流采样基于 `7 mΩ` 分流电阻、`20x` 放大增益和 `1.65 V` 中点偏置,使用INA240A1 进行差分采样并放大
+- `ADC1` 规则组用于 `VIN/IIN/VOUT/IOUT`
+- 温度由 `ADC2/ADC3/ADC5` 配合 `temp.c` 完成换算 使用10k NTC热敏电阻
 
-建议采用快环和慢环分离：
+- ![电压采样](https://img.hepi.ng/v2/pWFbBcN.png)
+- ![电流采样与基准](https://img.hepi.ng/v2/tMQ0m25.png)
+- ![温度采样](https://img.hepi.ng/v2/X8Ft1Mr.png)
 
-- `电流内环`
-  - 执行频率：每个 PWM 周期，或每 `1~2` 个 PWM 周期。
-  - 输入：当前模式对应的近似电感电流。
-  - 输出：主调制桥臂占空比。
-- `电压外环`
-  - 执行频率：`1kHz ~ 10kHz`
-  - 输入：`VOUT`
-  - 输出：电流给定 `Iref`
+### 2.5 辅助硬件
 
-推荐控制链：
+- 外部参数存储：`W25Q64`
+- 风扇：`TIM8_CH3` PWM 控制
+- 三色 LED：红 / 黄 / 绿状态指示
+- `DIV_SW`、驱动使能等 GPIO 作为板级辅助控制
 
-```text
-Vref - Vout -> Voltage PID -> Iref
-Iref - Imeas -> Current PID -> Duty
-```
+
+### 2.6 PCB
+
+- ![顶层](https://img.hepi.ng/v2/PldqpuZ.png)
+- ![地层](https://img.hepi.ng/v2/zlATTa3.png)
+- ![电层](https://img.hepi.ng/v2/UT0qUFB.png)
+- ![底层](https://img.hepi.ng/v2/nbD0gaq.png)
+
+### 效率实测
+![img.png](https://img.hepi.ng/v2/6RHUOSX.png)
+---
+
+## 3. 下位机 C 代码解析
+
+本章对应当前实际参与运行的 C 代码。
+
+### 3.1 总体执行结构
+
+下位机执行节拍分为三层：
+
+1. `main.c`
+  - 负责所有外设初始化
+  - 启动 ADC、DMA、USB、定时器、HRTIM、看门狗
+2. `TIM7` 5 ms 中断
+  - 负责采样平均、保护、主状态机推进、模式判断、协议流 tick
+3. `HRTIM` 快环中断
+  - 负责电流环、电压环、模式对应 duty 计算和 PWM 比较值刷新
+
+整体上是“中断驱动 + 全局控制变量共享”的经典数字电源固件结构。
+
+### 3.2 主要用户控制文件
+
+#### `Core/Src/main.c`
+
+作用：
+
+- 系统入口
+- 启动所有底层外设
+- 启动风扇 PWM
+- 启动 `TIM6 / TIM7 / TIM16`
+- 启动 ADC 与 HRTIM
+- 在主循环里运行慢速后台任务
+
+关键点：
+
+- `TIM6` 负责毫秒计数与喂狗
+- `TIM7` 负责控制主节拍
+- `TIM16` 负责把 ADC 平均值换算成物理量
+- 主循环负责：
+  - `StatusLed_Update()`
+  - `Update_Flash()`
+  - `UF4Transport_RunTask()`
+
+#### `Core/Src/function.c`
+
+作用：
+
+- 保存全局控制变量
+- 实现 ADC 平均
+- 实现主状态机
+- 实现 Buck / Mix / Boost 模式判定
+- 实现 OVP / OCP / OTP / Short 保护
+- 实现参数默认值、Flash 初始化与读写
+- 实现风扇 PWM 控制
+- 实现模式切换占空注入准备
+
+核心职责可以分成六类：
+
+1. 数据与状态变量
+  - `CtrValue`
+  - `DF`
+  - `SADC`
+  - `SET_Value`
+2. ADC 采样平均
+  - `ADCSample()`
+  - `ADC_calculate()`
+3. 主状态机
+  - `StateM()`
+  - `StateMInit()`
+  - `StateMWait()`
+  - `StateMRise()`
+  - `StateMRun()`
+  - `StateMErr()`
+4. 模式切换
+  - `BBMode()`
+  - `PowerControl_PrepareModeSwitch()`
+5. 保护
+  - `ShortOff()`
+  - `OVP()`
+  - `OCP()`
+  - `OTP()`
+6. 辅助
+  - `PowerControl_DisableOutput()`
+  - `FAN_PWM_set()`
+  - `Init_Flash() / Read_Flash() / Update_Flash()`
+
+当前重要变更也集中在这个文件：
+
+- 已删除输入欠压保护
+- 已删除固件自动风扇策略，改为上位机直接控制
+- 新增切模前 duty 预计算与注入准备
+
+#### `Core/Src/pid.c`
+
+作用：
+
+- 实现双环控制
+- 根据当前模式输出 Buck / Boost 支路占空比
+- 直接刷新 HRTIM 比较寄存器
+
+当前快环结构：
+
+1. 电流环先生成电压参考修正量
+2. 电压环再根据当前模式生成主 duty
+3. 根据 `Buck / Mix / Boost` 决定：
+  - 哪一侧主调制
+  - 哪一侧固定占空或平滑逼近目标占空
+4. 最后写入：
+  - `Timer A Compare1`
+  - `Timer A Compare3`
+  - `Timer D Compare1`
+
+当前代码已经加入三类关键增强：
+
+- `Buck` 模式下，Boost 支路对齐为同步整流安全占空
+- `Mix` 模式进入改成平滑爬升，避免一刀切到高占空
+- `Boost` 模式进入改成平滑爬升，避免 Buck 支路瞬时拉到极高占空
+
+另外还增加了 TI 思路的切模注入：
+
+- 切换到 `Buck` 前先按 `D = Vout / Vin` 计算目标 duty
+- 切换到 `Mix` 前先按 `D = Vout / (Vin + Vout)` 计算目标 duty
+- 切换到 `Boost` 前先按 `D = (Vout - Vin) / Vout` 计算目标 duty
+- 切模时把 duty 与环路种子直接装入快环，避免沿用旧模式积分硬跳
+
+#### `Core/Src/uf4_transport.c`
+
+作用：
+
+- 把固件控制变量绑定到 `UF4COM V3` 协议 ID
+- 处理 USB CDC / USART DMA 收发
+- 处理 `READ / WRITE / REPORT / STREAM`
+- 负责把上位机写入同步到控制变量
+
+主要内容：
+
+1. 固定传输端口选择
+2. UF4 ID 表绑定
+3. 读寄存器镜像刷新
+4. 写寄存器应用
+5. CDC / UART DMA 输入处理
+6. 流发送调度
+
+这部分是下位机和 F4CP 上位机之间的桥。
+
+#### `Core/Src/status_led.c`
+
+作用：
+
+- 按当前状态机、故障和输出状态更新三色 LED
+- 保持项目当前定义的状态语义
+
+该文件不参与功率控制本身，但负责把运行状态转换成板上可视反馈。
+
+#### `Core/Src/temp.c`
+
+作用：
+
+- NTC 温度换算
+- MCU 温度换算
+
+它为 `OTP()`、上报温度和风扇控制数据源提供支持。
+
+#### `Core/Src/W25Q64.c`
+
+作用：
+
+- SPI Flash 底层驱动
+- 提供读、写、擦除接口
+
+上层由 `function.c` 中的 `Init_Flash() / Read_Flash() / Update_Flash()` 调用。
+
+### 3.3 主要 CubeMX/HAL 生成文件
+
+这些文件大多由 CubeMX 或 HAL 模板生成，但在项目运行中实际承担关键底层角色，因此也应当纳入说明。
+
+#### `Core/Src/adc.c`
+
+- 配置 `ADC1 / ADC2 / ADC3 / ADC5`
+- 定义采样通道、触发源、过采样、DMA 方式
+- `ADC1` 是主功率量采样入口
+
+#### `Core/Src/hrtim.c`
+
+- 配置 `HRTIM1`
+- 定义 `Timer A` 和 `Timer D`
+- 配置死区
+- 配置 ADC 触发点
+- 配置互补输出引脚
+
+这是功率控制的底层核心之一。
+
+#### `Core/Src/tim.c`
+
+- 配置 `TIM6`
+- 配置 `TIM7`
+- 配置 `TIM8`
+- 配置 `TIM16`
 
 其中：
 
-- `BUCK` 时 `Imeas = IOUT`
-- `BOOST` 时 `Imeas = IIN`
-- `MIX` 时 `Imeas` 可先使用 `IIN`
+- `TIM6`：1 ms
+- `TIM7`：5 ms
+- `TIM16`：10 ms
+- `TIM8_CH3`：风扇 PWM
 
-### 软启动建议
+#### `Core/Src/gpio.c`
 
-软启动不要直接拉升占空比，建议拉升参考值：
+- 配置 LED
+- 配置 PWM 引脚复用
+- 配置 `DIV_SW` 等辅助引脚
 
-- 电压模式启动：
-  - `Vref_cmd` 从 `0` 线性上升到目标值
-- 电流模式启动：
-  - `Iref_cmd` 从 `0` 线性上升到限制值
+#### `Core/Src/usart.c`
 
-软启动期间建议：
+- 配置 `USART1 / USART2`
+- 配合 `UF4Transport` 处理串口通信
 
-- 限制最大占空比
-- 限制电流参考上升斜率
-- 若检测到异常，立即退出到 `FAULT`
+#### `Core/Src/spi.c`
 
-### 推荐代码骨架
+- 配置 `SPI1`
+- 供 `W25Q64.c` 使用
 
-```c
-typedef struct
-{
-    uint32_t fault_flags;
-    uint8_t enabled;
-    POWER_state_t state;
-    POWER_mode_t mode;
-    float vin_v;
-    float vout_v;
-    float iin_a;
-    float iout_a;
-    float iref_a;
-    float vref_v;
-    float duty_main;
-} POWER_ctrl_t;
+#### `Core/Src/dma.c`
+
+- 配置 DMA 控制器
+- 为 `ADC1 DMA`、UART DMA 等提供底层支持
+
+#### `Core/Src/iwdg.c`
+
+- 配置独立看门狗
+- 由固定节拍任务喂狗
+
+#### `Core/Src/stm32g4xx_it.c`
+
+- 中断入口
+- 把 HRTIM、TIM、DMA、USB 等中断交给 HAL 和用户逻辑
+
+#### `Core/Src/stm32g4xx_hal_msp.c`
+
+- MSP 初始化
+- GPIO AF、DMA 链接、时钟使能等底层板级装配
+
+#### `Core/Src/system_stm32g4xx.c`
+
+- 系统时钟基础支持
+- 核心启动时钟框架
+
+### 3.4 配套中间件与接口层 C 文件
+
+除了 `Core/Src`，还有几类 C 文件同样是固件运行必需部分：
+
+#### `USB_Device/App/usbd_cdc_if.c`
+
+- USB CDC 收发桥接
+- 把收到的 USB 数据转发到 `UF4Transport_OnUsbCdcRx()`
+
+#### `Middlewares` / `Drivers`
+
+- `STM32 HAL`
+- `CMSIS`
+- `USB Device`
+
+这些代码不是本项目手写控制逻辑，但属于最终可运行固件的一部分。
+
+### 3.5 当前固件实际调用链
+
+可以把当前控制链概括为：
+
+1. `main.c` 初始化外设
+2. `TIM7` 周期调用：
+  - `ADCSample()`
+  - 保护逻辑
+  - `StateM()`
+  - `BBMode()`
+3. `HRTIM` 快环中断调用：
+  - `BuckBoostVILoopCtlPID()`
+4. `UF4Transport`
+  - 处理上位机命令
+  - 回传状态与流数据
+5. 主循环
+  - 更新状态灯
+  - 保存参数
+  - 处理通信后台任务
+
+---
+
+## 4. 借鉴代码与参考资料
+
+本项目不是从零开始完全自写。下面按“来源 -> 用到什么”列出。
+
+### 4.1 直接借鉴的代码工程
+
+#### 参考代码 [Buck-Boost-Digital-Power](https://github.com/zeruns/Synchronous-Rectification-Buck-Boost-Digital-Power-Supply-Based-on-STM32)
+
+这是当前 `UF4DigitalPower` 最直接的代码来源，借鉴内容包括：
+
+- 控制变量组织方式
+- 主状态机结构
+- `Buck / Mix / Boost` 模式判定框架
+- `pid.c` 的双环控制结构
+- 软启动框架
+- Flash 参数存储方式
+- 温度换算与风扇 PWM 基础接口
+
+当前工程并不是简单复制，而是做了以下方向上的重构：
+
+- 从 `D/F` HRTIM 映射迁移到当前 `A/D` 映射
+- 删除按键和 OLED 本地人机交互
+- 改为 `UF4COM + F4CP` 上下位机协同
+- 去掉 `FMAC / CRC` 硬件依赖，改为纯软件路径
+- 修复多处模式切换、占空钳位、保护与上报问题
+
+### 4.2 协议核心来源
+
+#### [UF4COM V3](https://github.com/UF4OVER/UF4COM)
+
+借鉴内容：
+
+- `UF4COM V3` 帧结构
+- CRC16-CCITT
+- TV 数据项编码
+- `READ / WRITE / REPORT / STREAM` 交互范式
+
+当前固件的 `uf4_transport.c` 与上位机 `app/protocol/tvlcom*.py` 都基于这一协议核心。
+
+### 4.3 ST 官方工具链与自动生成代码
+
+#### STM32CubeMX / STM32CubeG4 / HAL / CMSIS
+
+借鉴内容：
+
+- 外设初始化代码骨架
+- HRTIM、ADC、TIM、USART、SPI、USB CDC 配置模板
+- 中断框架
+- HAL 驱动与启动文件
+
+这些内容主要体现在：
+
+- `adc.c`
+- `hrtim.c`
+- `tim.c`
+- `gpio.c`
+- `usart.c`
+- `spi.c`
+- `dma.c`
+- `stm32g4xx_it.c`
+- `stm32g4xx_hal_msp.c`
+
+### 4.4 控制策略参考资料
+
+#### TI官方文档 [Multimode control for a four-switch buck-boost converter](https://www.ti.com/lit/an/slyt765/slyt765.pdf?ts=1781482881151)
+
+标题：
+
+- `Multimode control for a four-switch buck-boost converter`
+
+借鉴内容：
+
+- `Buck / Buck-Boost / Boost` 多模态 duty 公式
+- 切模前先按目标模式计算 duty，再把目标 duty 注入控制环的思路
+- 认识到模式切换时不应依赖旧模式积分慢慢追
+
+当前项目里新增的“切模前预计算 duty 并注入”机制直接参考了这条思路。
+
+#### ST官方文档 [Buck-boost converter using the STM32F334 Discovery kit](https://www.st.com/resource/en/application_note/an4449-buckboost-converter-using-the-stm32f334-discovery-kit-stmicroelectronics.pdf)
+
+标题：
+
+- `Buck-boost converter using the STM32F334 Discovery kit`
+
+借鉴内容：
+
+- HRTIM 在 Buck-Boost 电源中的使用方法
+- ADC 触发和 PWM 协调方式
+- 高分辨率定时器在数字电源中的组织思路
+
+### 4.5 器件资料参考
+
+#### `UCC27211` 数据手册
+
+借鉴内容：
+
+- 半桥高边 bootstrap 驱动机制
+- `HB / HS / HO / LO` 含义
+- 高边长期近似常开时 bootstrap 刷新约束
+
+这对当前 `Mix / Boost` 模式稳定性分析非常重要。
+
+---
+
+## 5. F4CP 上位机介绍
+> 上位机具体实现可以参考 [F4CP 工程实现档案](https://blog.hepi.ng/posts/f4cp-project-archive/)
+`F4CP` 是当前系统的 Windows 上位机，负责：
+
+- 串口连接
+- 设备控制
+- 实时监控
+- 实时曲线
+- 固件烧录
+- 版本检查与升级
+- 通用 UF4COM 调试
+
+> 界面展示
+> ![0e2c171f7100f64bd503c33d64c4cd88.png](https://img.hepi.ng/v2/Lh206dl.png)
+> ![c99161a30ec4ce058ffab5c0103279fa.png](https://img.hepi.ng/v2/mSwzYPx.png)
+
+### 5.1 技术栈
+
+- Python `3.11`
+- PyQt5
+- qfluentwidgets
+- pyqtgraph
+- pyOCD
+- `uv`
+
+入口文件是：
+
+- `start.py`
+
+### 5.2 主窗口与页面
+
+当前导航在 `app/window/navigation.py` 中定义，主要页面包括：
+
+- `HomePage`
+  - 首页与软件概览
+- `DevicePage`
+  - 串口与 `UF4COM` 调试
+- `PowerPage`
+  - 数字电源设备主控制页
+- `DaplinkPage`
+  - DAPLink / pyOCD 烧录页
+- `VersionPage`
+  - 应用与固件版本管理页
+
+仓库中还保留：
+
+- `BatteryPage`
+
+该页面当前未作为主导航默认入口，但代码仍在仓库中维护。
+
+### 5.3 上位机协议层
+
+当前协议栈主要位于：
+
+- `app/protocol/tvlcom.py`
+- `app/protocol/tvlcom_frame.py`
+- `app/protocol/tvlcom_tlv.py`
+- `app/protocol/tvlcom_stream.py`
+- `app/protocol/tvlcom_crc.py`
+
+职责如下：
+
+- 组帧
+- 解帧
+- CRC16-CCITT
+- TV 编码/解码
+- 流式数据请求打包
+
+虽然文件名里还保留 `tvlcom` 历史命名，但当前实际承载的是 `UF4COM` 协议实现。
+
+### 5.4 电源设备会话层
+
+数字电源专用会话位于：
+
+- `app/session/session_power/session_power.py`
+
+核心职责：
+
+1. 串口会话接管
+2. `READ / WRITE / REPORT / STREAM` 请求
+3. `PowerStatus` 快照整理
+4. 写入事务暂停与恢复
+5. 流式采样解析
+6. 调试快照读取
+7. 通信失败与自动断开管理
+
+其中最核心的类是：
+
+- `F4CPPowerClient`
+
+它把协议值整理成 UI 可直接使用的状态，例如：
+
+- 输入输出电压电流
+- 模式名
+- 拓扑名
+- 故障标志
+- OVP/OCP/OTP 当前值和设定值
+- 风扇当前值与设定值
+- PWM Compare 调试量
+
+### 5.5 页面与控制器分工
+
+当前页面分工比较清晰：
+
+- `app/widgets/pages/`
+  - 负责控件创建、布局、显示
+- `app/controllers/`
+  - 负责页面事件绑定与业务流程编排
+- `app/session/`
+  - 负责串口、设备、烧录会话
+- `app/core/`
+  - 负责常量、数据中心、基础对象
+
+例如：
+
+- `controller_power_page.py`
+  - 负责把 `PowerPage` 的按钮、输入框和 `F4CPPowerClient` 连起来
+- `page_power.py`
+  - 负责设备看板、输出控制、保护参数、实时曲线等 UI
+
+### 5.6 实时曲线与数据流
+
+实时曲线由以下部分组成：
+
+- `app/core/data_hub.py`
+- `app/widgets/chart/`
+- `pyqtgraph`
+
+数据流：
+
+1. 串口收到 `UF4COM` 帧
+2. `F4CPPowerClient` 解帧并生成状态
+3. 状态写入 `DataHub`
+4. 图表组件从 `DataHub` 读取滑动窗口
+5. 页面刷新波形与数值
+
+### 5.7 烧录与版本管理
+
+#### 烧录
+
+- 页面：`page_daplink.py`
+- 会话：`session_daplink.py`
+
+负责：
+
+- pyOCD 进程管理
+- 固件擦除
+- 固件下载
+- 复位运行
+- 本地包管理
+
+#### 版本管理
+
+- 页面：`page_version.py`
+- 固件发布脚本：`E:\PROJECT_C\UF4DigitalPower\scripts\publish_firmware.py`
+- 发布入口脚本：`E:\PROJECT_C\UF4DigitalPower\scripts\deploy.ps1`
+
+当前支持：
+
+- `stable / beta` 通道
+- 固件 `manifest.json`
+- `index.json`
+- `latest.json`
+- `min_client` 最低上位机版本要求
+
+---
+
+## 6. 项目结构
+
+### 6.1 下位机固件
+
+```text
+UF4DigitalPower/
+├─ Core/
+│  ├─ Inc/
+│  └─ Src/
+├─ Drivers/
+├─ Middlewares/
+├─ USB_Device/
+├─ docs/
+├─ scripts/
+├─ storage/
+└─ UF4DigitalPower.ioc
 ```
 
-```c
-void POWER_runAppFastLoop(POWER_ctrl_t *ctrl)
-{
-    POWER_updateAppMeasurements(ctrl);
-    POWER_checkAppFaults(ctrl);
+### 6.2 上位机软件
 
-    if (ctrl->fault_flags != 0u)
-    {
-        POWER_enterAppFault(ctrl);
-        return;
-    }
-
-    switch (ctrl->state)
-    {
-        case POWER_STATE_IDLE:
-            POWER_handleAppIdle(ctrl);
-            break;
-
-        case POWER_STATE_PRECHARGE:
-            POWER_handleAppPrecharge(ctrl);
-            break;
-
-        case POWER_STATE_SOFTSTART:
-            POWER_handleAppSoftstart(ctrl);
-            break;
-
-        case POWER_STATE_RUN:
-            POWER_updateAppMode(ctrl);
-            POWER_runAppCurrentLoop(ctrl);
-            break;
-
-        case POWER_STATE_FAULT:
-        default:
-            POWER_shutdownAppPwm(ctrl);
-            break;
-    }
-}
+```text
+F4CP/
+├─ app/
+│  ├─ controllers/
+│  ├─ core/
+│  ├─ devices/
+│  ├─ manager/
+│  ├─ protocol/
+│  ├─ session/
+│  ├─ widgets/
+│  └─ window/
+├─ config/
+├─ docs/
+├─ Resources/
+├─ script/
+├─ tests/
+├─ start.py
+└─ pyproject.toml
 ```
 
-```c
-void POWER_runAppSlowLoop(POWER_ctrl_t *ctrl)
-{
-    if (ctrl->state != POWER_STATE_RUN)
-    {
-        return;
-    }
+---
 
-    ctrl->iref_a = POWER_runAppVoltagePid(ctrl->vref_v, ctrl->vout_v);
-}
+## 7. 快速开始
+
+### 7.1 启动上位机
+
+```powershell
+git clone https://github.com/UF4OVER/UF4DigitalPower
+git submodule update --init --recursive
+```
+```powershell
+uv sync
+uv run python start.py
 ```
 
-### 当前项目下的落地建议
 
-- 示例工程的电源算法已迁移到 `USER/CTRL/power_ctrl.c`：
-  - HRTIM A 重复中断调用 `POWER_runAppControlTick()`。
-  - PID 快环按 PWM 周期执行。
-  - 采样滤波、保护、状态机和模式判定按 5ms 节拍分频执行。
-  - PWM 输出适配当前 IOC：A 路作为 Buck 桥，D 路作为 Boost 桥。
-- `BSP`
-  - 统一维护 `BSP_adcResult_t` 和物理量换算。
-  - 提供 `Buck` 和 `Boost` 下内环电流选择接口。
-- `CTRL`
-  - 先完成状态机和模式切换，不急着一开始就把 PID 调到最优。
-  - 先让 `IDLE -> SOFTSTART -> RUN -> FAULT` 跑通。
-- `模式切换`
-  - 先用固定阈值 + 迟滞。
-  - 等基本运行稳定后，再加更细的前馈和积分处理。
+---
+项目中借鉴道到的其他项目或者公开文档
+
+- 通信协议 [UF4COM V3](https://github.com/UF4OVER/UF4COM)
+- 参考代码 [Buck-Boost-Digital-Power](https://github.com/zeruns/Synchronous-Rectification-Buck-Boost-Digital-Power-Supply-Based-on-STM32)
+- TI官方文档 [Multimode control for a four-switch buck-boost converter](https://www.ti.com/lit/an/slyt765/slyt765.pdf?ts=1781482881151)
+- ST官方文档 [Buck-boost converter using the STM32F334 Discovery kit](https://www.st.com/resource/en/application_note/an4449-buckboost-converter-using-the-stm32f334-discovery-kit-stmicroelectronics.pdf)
+---
+
+## 目录
+
+- [1. 项目总览](#1-项目总览)
+- [2. 硬件介绍](#2-硬件介绍)
+- [3. 下位机 C 代码解析](#3-下位机-c-代码解析)
+- [4. 借鉴代码与参考资料](#4-借鉴代码与参考资料)
+- [5. F4CP 上位机介绍](#5-f4cp-上位机介绍)
+- [6. 项目结构](#6-项目结构)
+- [7. 快速开始](#7-快速开始)
+
+---
+
+## 1. 项目总览
+
+本项目是一套基于 STM32G474 的数字电源系统
+- 设计输入:`VIN` 5V - 40V
+- 输出范围：`0.5A - 10A`，`0.5V - 40V`
+- 功率拓扑：四开关同步整流 Buck-Boost
+> 注意: 作者使用的MOS可能不够理想 ，因此在高压低压两端的效率和稳定性可能不够好，后续会考虑更换更适合的MOSFET以提升性能。
+## 2. 硬件介绍
+
+> 当前作者测试使用到的硬件参数及其计算详情见 [计算记录](https://blog.hepi.ng/posts/overview_of_hardware_parameters_and_loops)
+![Snipaste_2026-06-16_15-29-22.png](https://img.hepi.ng/v2/qBFM0Dk.png)
+
+> 实物图
+> ![IMG_20260604_213728.jpg](https://img.hepi.ng/v2/NCb81Dz.jpeg)
+> ![IMG_20260604_213704.jpg](https://img.hepi.ng/v2/VqxCobD.jpeg)
+> ![IMG_20260616_153259.jpg](https://img.hepi.ng/v2/3x1zBgu.jpeg)
+> ![8A实测无问题](https://img.hepi.ng/v2/NemKAHw.jpeg)
+
+
+### 2.1 主控与系统定位
+
+- 主控 MCU: `STM32G474CBT6`
+- 板载DEBUG: `STM32F103C8T6（DAPLink）`
+- 栅极驱动器: `UCC27211`
+- 辅助电源1: VIN->5V `LMR36520F`  用于运放，基准电压和风扇供电
+- 辅助电源2: 5V->3V3 `LM1117-3.3`  用于MCU 与外设控制逻辑供电
+- 辅助电源3: 5V->11.1V `SY7304DBC` 用于栅极驱动器供电
+
+当前板卡定位是四开关同步整流 Buck-Boost 数字电源控制板，下位机负责控制与保护，上位机负责人机交互、调试、监控和升级。
+
+### 2.2 功率级与工作模式
+
+当前功率拓扑是四开关 Buck-Boost，固件中划分三种模式：
+
+- `Buck`
+  - 输入明显高于输出
+  - Buck 桥主调制
+  - Boost 桥承担同步整流或固定导通辅助角色
+- `Mix`
+  - 输入电压接近输出电压
+  - 两侧桥臂共同参与调制
+  - 用于平滑跨越 Buck 和 Boost 边界
+- `Boost`
+  - 输入明显低于输出
+  - Boost 桥主调制
+  - Buck 桥承担同步整流或固定导通辅助角色
+
+- ![功率级电路图](https://img.hepi.ng/v2/WKNQnxV.png "功率级电路图")
+
+当前 IOC 与固件约定中：
+
+- `HRTIM Timer A` 对应 Buck 桥
+- `HRTIM Timer D` 对应 Boost 桥
+- `PA8/PA9` 为一组互补 PWM
+- `PB14/PB15` 为另一组互补 PWM
+
+### 2.3 栅极驱动与 Bootstrap 特性
+
+项目使用 `UCC27211` 半桥驱动器。该器件高边驱动采用 bootstrap 供电思路：
+
+- 高边供电使用 `HB-HS`
+- 需要 `HB-HS` 自举电容,使用100nF的贴片电容
+- 需要 `HS` 周期性回到较低电位，bootstrap 电容才能补电
+
+这意味着在 `Mix` 或 `Boost` 模式中，如果某一侧高边长期接近常开，不给 bootstrap 刷新窗口，就可能出现高边驱动电压下跌，进而表现为：
+
+- 模式不稳定
+- 输入被突然拉低
+- 无法顺利进入 `Mix` / `Boost`
+- 模式反复抖动
+
+因此控制代码中不能只看理论占空比，还必须兼顾驱动器刷新条件。
+- ![6f4cab3df3eb4a79ca3ce2c1fd22781c.png](https://img.hepi.ng/v2/ajeCH7l.png)
+### 2.4 采样链路
+
+当前固件的主要采样量如下：
+
+- `VIN`
+- `IIN`
+- `VOUT`
+- `IOUT`
+- `Board TEMP1`
+- `Board TEMP2`
+- `CPU TEMP`
+
+采样与换算特性：
+
+- 电压采样采用分压进入 ADC，再由软件恢复真实电压值，使用 GS8558-SR 运放
+- 电流采样基于 `7 mΩ` 分流电阻、`20x` 放大增益和 `1.65 V` 中点偏置,使用INA240A1 进行差分采样并放大
+- `ADC1` 规则组用于 `VIN/IIN/VOUT/IOUT`
+- 温度由 `ADC2/ADC3/ADC5` 配合 `temp.c` 完成换算 使用10k NTC热敏电阻
+
+- ![电压采样](https://img.hepi.ng/v2/pWFbBcN.png)
+- ![电流采样与基准](https://img.hepi.ng/v2/tMQ0m25.png)
+- ![温度采样](https://img.hepi.ng/v2/X8Ft1Mr.png)
+
+### 2.5 辅助硬件
+
+- 外部参数存储：`W25Q64`
+- 风扇：`TIM8_CH3` PWM 控制
+- 三色 LED：红 / 黄 / 绿状态指示
+- `DIV_SW`、驱动使能等 GPIO 作为板级辅助控制
+
+
+### 2.6 PCB
+
+- ![顶层](https://img.hepi.ng/v2/PldqpuZ.png)
+- ![地层](https://img.hepi.ng/v2/zlATTa3.png)
+- ![电层](https://img.hepi.ng/v2/UT0qUFB.png)
+- ![底层](https://img.hepi.ng/v2/nbD0gaq.png)
+---
+
+## 3. 下位机 C 代码解析
+
+本章对应当前实际参与运行的 C 代码。
+
+### 3.1 总体执行结构
+
+下位机执行节拍分为三层：
+
+1. `main.c`
+  - 负责所有外设初始化
+  - 启动 ADC、DMA、USB、定时器、HRTIM、看门狗
+2. `TIM7` 5 ms 中断
+  - 负责采样平均、保护、主状态机推进、模式判断、协议流 tick
+3. `HRTIM` 快环中断
+  - 负责电流环、电压环、模式对应 duty 计算和 PWM 比较值刷新
+
+整体上是“中断驱动 + 全局控制变量共享”的经典数字电源固件结构。
+
+### 3.2 主要用户控制文件
+
+#### `Core/Src/main.c`
+
+作用：
+
+- 系统入口
+- 启动所有底层外设
+- 启动风扇 PWM
+- 启动 `TIM6 / TIM7 / TIM16`
+- 启动 ADC 与 HRTIM
+- 在主循环里运行慢速后台任务
+
+关键点：
+
+- `TIM6` 负责毫秒计数与喂狗
+- `TIM7` 负责控制主节拍
+- `TIM16` 负责把 ADC 平均值换算成物理量
+- 主循环负责：
+  - `StatusLed_Update()`
+  - `Update_Flash()`
+  - `UF4Transport_RunTask()`
+
+#### `Core/Src/function.c`
+
+作用：
+
+- 保存全局控制变量
+- 实现 ADC 平均
+- 实现主状态机
+- 实现 Buck / Mix / Boost 模式判定
+- 实现 OVP / OCP / OTP / Short 保护
+- 实现参数默认值、Flash 初始化与读写
+- 实现风扇 PWM 控制
+- 实现模式切换占空注入准备
+
+核心职责可以分成六类：
+
+1. 数据与状态变量
+  - `CtrValue`
+  - `DF`
+  - `SADC`
+  - `SET_Value`
+2. ADC 采样平均
+  - `ADCSample()`
+  - `ADC_calculate()`
+3. 主状态机
+  - `StateM()`
+  - `StateMInit()`
+  - `StateMWait()`
+  - `StateMRise()`
+  - `StateMRun()`
+  - `StateMErr()`
+4. 模式切换
+  - `BBMode()`
+  - `PowerControl_PrepareModeSwitch()`
+5. 保护
+  - `ShortOff()`
+  - `OVP()`
+  - `OCP()`
+  - `OTP()`
+6. 辅助
+  - `PowerControl_DisableOutput()`
+  - `FAN_PWM_set()`
+  - `Init_Flash() / Read_Flash() / Update_Flash()`
+
+当前重要变更也集中在这个文件：
+
+- 已删除输入欠压保护
+- 已删除固件自动风扇策略，改为上位机直接控制
+- 新增切模前 duty 预计算与注入准备
+
+#### `Core/Src/pid.c`
+
+作用：
+
+- 实现双环控制
+- 根据当前模式输出 Buck / Boost 支路占空比
+- 直接刷新 HRTIM 比较寄存器
+
+当前快环结构：
+
+1. 电流环先生成电压参考修正量
+2. 电压环再根据当前模式生成主 duty
+3. 根据 `Buck / Mix / Boost` 决定：
+  - 哪一侧主调制
+  - 哪一侧固定占空或平滑逼近目标占空
+4. 最后写入：
+  - `Timer A Compare1`
+  - `Timer A Compare3`
+  - `Timer D Compare1`
+
+当前代码已经加入三类关键增强：
+
+- `Buck` 模式下，Boost 支路对齐为同步整流安全占空
+- `Mix` 模式进入改成平滑爬升，避免一刀切到高占空
+- `Boost` 模式进入改成平滑爬升，避免 Buck 支路瞬时拉到极高占空
+
+另外还增加了 TI 思路的切模注入：
+
+- 切换到 `Buck` 前先按 `D = Vout / Vin` 计算目标 duty
+- 切换到 `Mix` 前先按 `D = Vout / (Vin + Vout)` 计算目标 duty
+- 切换到 `Boost` 前先按 `D = (Vout - Vin) / Vout` 计算目标 duty
+- 切模时把 duty 与环路种子直接装入快环，避免沿用旧模式积分硬跳
+
+#### `Core/Src/uf4_transport.c`
+
+作用：
+
+- 把固件控制变量绑定到 `UF4COM V3` 协议 ID
+- 处理 USB CDC / USART DMA 收发
+- 处理 `READ / WRITE / REPORT / STREAM`
+- 负责把上位机写入同步到控制变量
+
+主要内容：
+
+1. 固定传输端口选择
+2. UF4 ID 表绑定
+3. 读寄存器镜像刷新
+4. 写寄存器应用
+5. CDC / UART DMA 输入处理
+6. 流发送调度
+
+这部分是下位机和 F4CP 上位机之间的桥。
+
+#### `Core/Src/status_led.c`
+
+作用：
+
+- 按当前状态机、故障和输出状态更新三色 LED
+- 保持项目当前定义的状态语义
+
+该文件不参与功率控制本身，但负责把运行状态转换成板上可视反馈。
+
+#### `Core/Src/temp.c`
+
+作用：
+
+- NTC 温度换算
+- MCU 温度换算
+
+它为 `OTP()`、上报温度和风扇控制数据源提供支持。
+
+#### `Core/Src/W25Q64.c`
+
+作用：
+
+- SPI Flash 底层驱动
+- 提供读、写、擦除接口
+
+上层由 `function.c` 中的 `Init_Flash() / Read_Flash() / Update_Flash()` 调用。
+
+### 3.3 主要 CubeMX/HAL 生成文件
+
+这些文件大多由 CubeMX 或 HAL 模板生成，但在项目运行中实际承担关键底层角色，因此也应当纳入说明。
+
+#### `Core/Src/adc.c`
+
+- 配置 `ADC1 / ADC2 / ADC3 / ADC5`
+- 定义采样通道、触发源、过采样、DMA 方式
+- `ADC1` 是主功率量采样入口
+
+#### `Core/Src/hrtim.c`
+
+- 配置 `HRTIM1`
+- 定义 `Timer A` 和 `Timer D`
+- 配置死区
+- 配置 ADC 触发点
+- 配置互补输出引脚
+
+这是功率控制的底层核心之一。
+
+#### `Core/Src/tim.c`
+
+- 配置 `TIM6`
+- 配置 `TIM7`
+- 配置 `TIM8`
+- 配置 `TIM16`
+
+其中：
+
+- `TIM6`：1 ms
+- `TIM7`：5 ms
+- `TIM16`：10 ms
+- `TIM8_CH3`：风扇 PWM
+
+#### `Core/Src/gpio.c`
+
+- 配置 LED
+- 配置 PWM 引脚复用
+- 配置 `DIV_SW` 等辅助引脚
+
+#### `Core/Src/usart.c`
+
+- 配置 `USART1 / USART2`
+- 配合 `UF4Transport` 处理串口通信
+
+#### `Core/Src/spi.c`
+
+- 配置 `SPI1`
+- 供 `W25Q64.c` 使用
+
+#### `Core/Src/dma.c`
+
+- 配置 DMA 控制器
+- 为 `ADC1 DMA`、UART DMA 等提供底层支持
+
+#### `Core/Src/iwdg.c`
+
+- 配置独立看门狗
+- 由固定节拍任务喂狗
+
+#### `Core/Src/stm32g4xx_it.c`
+
+- 中断入口
+- 把 HRTIM、TIM、DMA、USB 等中断交给 HAL 和用户逻辑
+
+#### `Core/Src/stm32g4xx_hal_msp.c`
+
+- MSP 初始化
+- GPIO AF、DMA 链接、时钟使能等底层板级装配
+
+#### `Core/Src/system_stm32g4xx.c`
+
+- 系统时钟基础支持
+- 核心启动时钟框架
+
+### 3.4 配套中间件与接口层 C 文件
+
+除了 `Core/Src`，还有几类 C 文件同样是固件运行必需部分：
+
+#### `USB_Device/App/usbd_cdc_if.c`
+
+- USB CDC 收发桥接
+- 把收到的 USB 数据转发到 `UF4Transport_OnUsbCdcRx()`
+
+#### `Middlewares` / `Drivers`
+
+- `STM32 HAL`
+- `CMSIS`
+- `USB Device`
+
+这些代码不是本项目手写控制逻辑，但属于最终可运行固件的一部分。
+
+### 3.5 当前固件实际调用链
+
+可以把当前控制链概括为：
+
+1. `main.c` 初始化外设
+2. `TIM7` 周期调用：
+  - `ADCSample()`
+  - 保护逻辑
+  - `StateM()`
+  - `BBMode()`
+3. `HRTIM` 快环中断调用：
+  - `BuckBoostVILoopCtlPID()`
+4. `UF4Transport`
+  - 处理上位机命令
+  - 回传状态与流数据
+5. 主循环
+  - 更新状态灯
+  - 保存参数
+  - 处理通信后台任务
+
+---
+
+## 4. 借鉴代码与参考资料
+
+本项目不是从零开始完全自写。下面按“来源 -> 用到什么”列出。
+
+### 4.1 直接借鉴的代码工程
+
+#### 参考代码 [Buck-Boost-Digital-Power](https://github.com/zeruns/Synchronous-Rectification-Buck-Boost-Digital-Power-Supply-Based-on-STM32)
+
+这是当前 `UF4DigitalPower` 最直接的代码来源，借鉴内容包括：
+
+- 控制变量组织方式
+- 主状态机结构
+- `Buck / Mix / Boost` 模式判定框架
+- `pid.c` 的双环控制结构
+- 软启动框架
+- Flash 参数存储方式
+- 温度换算与风扇 PWM 基础接口
+
+当前工程并不是简单复制，而是做了以下方向上的重构：
+
+- 从 `D/F` HRTIM 映射迁移到当前 `A/D` 映射
+- 删除按键和 OLED 本地人机交互
+- 改为 `UF4COM + F4CP` 上下位机协同
+- 去掉 `FMAC / CRC` 硬件依赖，改为纯软件路径
+- 修复多处模式切换、占空钳位、保护与上报问题
+
+### 4.2 协议核心来源
+
+#### [UF4COM V3](https://github.com/UF4OVER/UF4COM)
+
+借鉴内容：
+
+- `UF4COM V3` 帧结构
+- CRC16-CCITT
+- TV 数据项编码
+- `READ / WRITE / REPORT / STREAM` 交互范式
+
+当前固件的 `uf4_transport.c` 与上位机 `app/protocol/tvlcom*.py` 都基于这一协议核心。
+
+### 4.3 ST 官方工具链与自动生成代码
+
+#### STM32CubeMX / STM32CubeG4 / HAL / CMSIS
+
+借鉴内容：
+
+- 外设初始化代码骨架
+- HRTIM、ADC、TIM、USART、SPI、USB CDC 配置模板
+- 中断框架
+- HAL 驱动与启动文件
+
+这些内容主要体现在：
+
+- `adc.c`
+- `hrtim.c`
+- `tim.c`
+- `gpio.c`
+- `usart.c`
+- `spi.c`
+- `dma.c`
+- `stm32g4xx_it.c`
+- `stm32g4xx_hal_msp.c`
+
+### 4.4 控制策略参考资料
+
+#### TI官方文档 [Multimode control for a four-switch buck-boost converter](https://www.ti.com/lit/an/slyt765/slyt765.pdf?ts=1781482881151)
+
+标题：
+
+- `Multimode control for a four-switch buck-boost converter`
+
+借鉴内容：
+
+- `Buck / Buck-Boost / Boost` 多模态 duty 公式
+- 切模前先按目标模式计算 duty，再把目标 duty 注入控制环的思路
+- 认识到模式切换时不应依赖旧模式积分慢慢追
+
+当前项目里新增的“切模前预计算 duty 并注入”机制直接参考了这条思路。
+
+#### ST官方文档 [Buck-boost converter using the STM32F334 Discovery kit](https://www.st.com/resource/en/application_note/an4449-buckboost-converter-using-the-stm32f334-discovery-kit-stmicroelectronics.pdf)
+
+标题：
+
+- `Buck-boost converter using the STM32F334 Discovery kit`
+
+借鉴内容：
+
+- HRTIM 在 Buck-Boost 电源中的使用方法
+- ADC 触发和 PWM 协调方式
+- 高分辨率定时器在数字电源中的组织思路
+
+### 4.5 器件资料参考
+
+#### `UCC27211` 数据手册
+
+借鉴内容：
+
+- 半桥高边 bootstrap 驱动机制
+- `HB / HS / HO / LO` 含义
+- 高边长期近似常开时 bootstrap 刷新约束
+
+这对当前 `Mix / Boost` 模式稳定性分析非常重要。
+
+---
+
+## 5. F4CP 上位机介绍
+> 上位机具体实现可以参考 [F4CP 工程实现档案](https://blog.hepi.ng/posts/f4cp-project-archive/)
+`F4CP` 是当前系统的 Windows 上位机，负责：
+
+- 串口连接
+- 设备控制
+- 实时监控
+- 实时曲线
+- 固件烧录
+- 版本检查与升级
+- 通用 UF4COM 调试
+
+### 5.1 技术栈
+
+- Python `3.11`
+- PyQt5
+- qfluentwidgets
+- pyqtgraph
+- pyOCD
+- `uv`
+
+入口文件是：
+
+- `start.py`
+
+### 5.2 主窗口与页面
+
+当前导航在 `app/window/navigation.py` 中定义，主要页面包括：
+
+- `HomePage`
+  - 首页与软件概览
+- `DevicePage`
+  - 串口与 `UF4COM` 调试
+- `PowerPage`
+  - 数字电源设备主控制页
+- `DaplinkPage`
+  - DAPLink / pyOCD 烧录页
+- `VersionPage`
+  - 应用与固件版本管理页
+
+仓库中还保留：
+
+- `BatteryPage`
+
+该页面当前未作为主导航默认入口，但代码仍在仓库中维护。
+
+### 5.3 上位机协议层
+
+当前协议栈主要位于：
+
+- `app/protocol/tvlcom.py`
+- `app/protocol/tvlcom_frame.py`
+- `app/protocol/tvlcom_tlv.py`
+- `app/protocol/tvlcom_stream.py`
+- `app/protocol/tvlcom_crc.py`
+
+职责如下：
+
+- 组帧
+- 解帧
+- CRC16-CCITT
+- TV 编码/解码
+- 流式数据请求打包
+
+虽然文件名里还保留 `tvlcom` 历史命名，但当前实际承载的是 `UF4COM` 协议实现。
+
+### 5.4 电源设备会话层
+
+数字电源专用会话位于：
+
+- `app/session/session_power/session_power.py`
+
+核心职责：
+
+1. 串口会话接管
+2. `READ / WRITE / REPORT / STREAM` 请求
+3. `PowerStatus` 快照整理
+4. 写入事务暂停与恢复
+5. 流式采样解析
+6. 调试快照读取
+7. 通信失败与自动断开管理
+
+其中最核心的类是：
+
+- `F4CPPowerClient`
+
+它把协议值整理成 UI 可直接使用的状态，例如：
+
+- 输入输出电压电流
+- 模式名
+- 拓扑名
+- 故障标志
+- OVP/OCP/OTP 当前值和设定值
+- 风扇当前值与设定值
+- PWM Compare 调试量
+
+### 5.5 页面与控制器分工
+
+当前页面分工比较清晰：
+
+- `app/widgets/pages/`
+  - 负责控件创建、布局、显示
+- `app/controllers/`
+  - 负责页面事件绑定与业务流程编排
+- `app/session/`
+  - 负责串口、设备、烧录会话
+- `app/core/`
+  - 负责常量、数据中心、基础对象
+
+例如：
+
+- `controller_power_page.py`
+  - 负责把 `PowerPage` 的按钮、输入框和 `F4CPPowerClient` 连起来
+- `page_power.py`
+  - 负责设备看板、输出控制、保护参数、实时曲线等 UI
+
+### 5.6 实时曲线与数据流
+
+实时曲线由以下部分组成：
+
+- `app/core/data_hub.py`
+- `app/widgets/chart/`
+- `pyqtgraph`
+
+数据流：
+
+1. 串口收到 `UF4COM` 帧
+2. `F4CPPowerClient` 解帧并生成状态
+3. 状态写入 `DataHub`
+4. 图表组件从 `DataHub` 读取滑动窗口
+5. 页面刷新波形与数值
+
+### 5.7 烧录与版本管理
+
+#### 烧录
+
+- 页面：`page_daplink.py`
+- 会话：`session_daplink.py`
+
+负责：
+
+- pyOCD 进程管理
+- 固件擦除
+- 固件下载
+- 复位运行
+- 本地包管理
+
+#### 版本管理
+
+- 页面：`page_version.py`
+- 固件发布脚本：`E:\PROJECT_C\UF4DigitalPower\scripts\publish_firmware.py`
+- 发布入口脚本：`E:\PROJECT_C\UF4DigitalPower\scripts\deploy.ps1`
+
+当前支持：
+
+- `stable / beta` 通道
+- 固件 `manifest.json`
+- `index.json`
+- `latest.json`
+- `min_client` 最低上位机版本要求
+
+---
+
+## 6. 项目结构
+
+### 6.1 下位机固件
+
+```text
+UF4DigitalPower/
+├─ Core/
+│  ├─ Inc/
+│  └─ Src/
+├─ Drivers/
+├─ Middlewares/
+├─ USB_Device/
+├─ docs/
+├─ scripts/
+├─ storage/
+└─ UF4DigitalPower.ioc
+```
+
+### 6.2 上位机软件
+
+```text
+F4CP/
+├─ app/
+│  ├─ controllers/
+│  ├─ core/
+│  ├─ devices/
+│  ├─ manager/
+│  ├─ protocol/
+│  ├─ session/
+│  ├─ widgets/
+│  └─ window/
+├─ config/
+├─ docs/
+├─ Resources/
+├─ script/
+├─ tests/
+├─ start.py
+└─ pyproject.toml
+```
+
+---
+
+## 7. 快速开始
+
+### 7.1 启动上位机
+
+```powershell
+uv sync
+uv run python start.py
+```
+
+### 7.2 构建下位机
+
+```powershell
+cmake --build "E:\PROJECT_C\UF4DigitalPower\cmake-build-debug" -- -j4
+```
+
+---

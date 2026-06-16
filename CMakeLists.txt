@@ -18,13 +18,10 @@ project(UF4DigitalPower C CXX ASM)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 
-#Uncomment for hardware floating point
-#add_compile_definitions(ARM_MATH_CM4;ARM_MATH_MATRIX_CHECK;ARM_MATH_ROUNDING)
-#add_compile_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
-#add_link_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
-
-#Uncomment for software floating point
-#add_compile_options(-mfloat-abi=soft)
+#Enable hardware floating point (Cortex-M4F)
+add_compile_definitions(ARM_MATH_CM4)
+add_compile_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
+add_link_options(-mfloat-abi=hard -mfpu=fpv4-sp-d16)
 
 add_compile_options(-mcpu=cortex-m4 -mthumb -mthumb-interwork)
 add_compile_options(-ffunction-sections -fdata-sections -fno-common -fmessage-length=0)
@@ -49,11 +46,34 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-include_directories(Core/Inc USB_Device/App USB_Device/Target Drivers/STM32G4xx_HAL_Driver/Inc Drivers/STM32G4xx_HAL_Driver/Inc/Legacy Middlewares/ST/STM32_USB_Device_Library/Core/Inc Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc Drivers/CMSIS/Device/ST/STM32G4xx/Include Drivers/CMSIS/Include)
+set(UF4COM_ROOT "E:/PROJECT_C/UF4COM")
+
+include_directories(
+        Core/Inc
+        USB_Device/App
+        USB_Device/Target
+        Drivers/STM32G4xx_HAL_Driver/Inc
+        Drivers/STM32G4xx_HAL_Driver/Inc/Legacy
+        Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+        Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+        Drivers/CMSIS/Device/ST/STM32G4xx/Include
+        Drivers/CMSIS/Include
+        ${UF4COM_ROOT}/uf4com/protocol/Inc
+        ${UF4COM_ROOT}/uf4com/register/Inc
+)
 
 add_definitions(-DDEBUG -DUSE_HAL_DRIVER -DSTM32G474xx)
 
 file(GLOB_RECURSE SOURCES "USB_Device/*.*" "Core/*.*" "Middlewares/*.*" "Drivers/*.*")
+list(APPEND SOURCES "${CMAKE_SOURCE_DIR}/Core/Src/startup_stm32g474xx.s")
+list(APPEND SOURCES
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com.c"
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_cmd.c"
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_crc.c"
+        "${UF4COM_ROOT}/uf4com/protocol/Src/uf4com_parser.c"
+        "${UF4COM_ROOT}/uf4com/register/Src/uf4com_id_table.c"
+)
+
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32G474CBTX_FLASH.ld)
 
@@ -69,5 +89,12 @@ set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${HEX_FILE}
         COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${BIN_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo ""
+        COMMAND ${CMAKE_COMMAND} -E echo "######     ###     ######   ######"
+        COMMAND ${CMAKE_COMMAND} -E echo "##   ##   ## ##   ##       ##    "
+        COMMAND ${CMAKE_COMMAND} -E echo "######   #######   #####    #####"
+        COMMAND ${CMAKE_COMMAND} -E echo "##       ##   ##       ##       ##"
+        COMMAND ${CMAKE_COMMAND} -E echo "##       ##   ##  ######   ######"
+        COMMAND ${CMAKE_COMMAND} -E echo ""
         COMMENT "Building ${HEX_FILE}
 Building ${BIN_FILE}")
