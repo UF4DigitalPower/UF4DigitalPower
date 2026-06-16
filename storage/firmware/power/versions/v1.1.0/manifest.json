@@ -1,0 +1,41 @@
+{
+  "project": "F4CP",
+  "kind": "Power",
+  "version": "v1.1.0",
+  "device": "STM32G474CBT6",
+  "hardware": "F4CP-G474-Power",
+  "channel": "stable",
+  "date": "2026-06-16",
+  "min_client": "1.0.0",
+  "files": {
+    "bin": {
+      "name": "F4CP-Power-v1.1.0.bin",
+      "download_url": "/api/v1/firmware/power/versions/v1.1.0/download?type=bin",
+      "sha256": "c9cfc33490d735e76a384fe921bdd0a12322d22298080a3bb2f2e8d1917d8840",
+      "size": 55300
+    },
+    "hex": {
+      "name": "F4CP-Power-v1.1.0.hex",
+      "download_url": "/api/v1/firmware/power/versions/v1.1.0/download?type=hex",
+      "sha256": "30845d5bf4d1348ff78b02a204f9fb2ef35b3985759fdaf7f81d265b6d0d3294",
+      "size": 155644
+    }
+  },
+  "burn": {
+    "method": "pyocd",
+    "target": "stm32g474cbtx",
+    "reset_after_download": true
+  },
+  "changelog_url": "/api/v1/firmware/power/versions/v1.1.0/changelog",
+  "notes": [
+    "正式发布 v1.1.0",
+    "适用设备：F4CP-POWER / STM32G474CBT6",
+    "重构输出禁用路径，关断时同步清理控制状态，降低旧参考值残留导致的异常输出风险",
+    "恢复并完善输入电压保护逻辑：无输入保持等待，运行中输入掉电进入故障保护",
+    "重构电源控制逻辑和风扇控制机制，上位机可直接接管风扇设定",
+    "优化 Buck / Mix / Boost 模式切换准备流程，切模前预计算 duty 并注入控制环，减少模式切换硬跳",
+    "更新 CMake 构建配置、build.ps1 构建脚本和项目 README 文档",
+    "基于 git 提交：4658f4b、2a42d34、39e2122、cd0f2e6",
+    "发布日期：2026-06-16"
+  ]
+}
