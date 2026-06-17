@@ -52,6 +52,7 @@ void PID_Init(void)
  */
 RAMFUNC void BuckBoostVILoopCtlPID(void){
     static CCRAM int32_t I_Integral = 0; // 电流环路积分量
+    static CCRAM int32_t i_vref_offset = 0; // 电流环累计拉低输出参考量
 
     CtrValue.Vout_ref = CtrValue.Vout_SETref; // 输出参考电压设置为设置电压
 
@@ -60,19 +61,46 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
 
     // 输出电流采样为低于偏置代表正电流；低于参考码表示过流，需要降低电压参考。
     IErr0 = IoutTemp - CtrValue.Iout_ref;
-    // 电流环路输出= 积分量 + KP*误差量 + KD*当前误差减上次误差
-    i0 = I_Integral + IErr0 * ILOOP_KP + (IErr0 - IErr1) * ILOOP_KD;
-    // 积分量=积分量+KI*误差量
-    I_Integral = I_Integral + IErr0 * ILOOP_KI;
 
-    // 积分量限制，积分量最大值限制
-    if (I_Integral > ADC_MAX_VALUE)
-        I_Integral = ADC_MAX_VALUE;
+    if (IoutTemp > (CtrValue.Iout_ref + ILOOP_RELEASE_MARGIN)){
+        I_Integral = 0;
+        i0 = 0;
+        IErr1 = IErr0;
+        if (i_vref_offset > 0){
+            i_vref_offset -= ILOOP_RELEASE_STEP;
+            if (i_vref_offset < 0){
+                i_vref_offset = 0;
+            }
+        }
+    }
+    else{
+        // 电流环路输出= 积分量 + KP*误差量 + KD*当前误差减上次误差
+        i0 = I_Integral + IErr0 * ILOOP_KP + (IErr0 - IErr1) * ILOOP_KD;
+        // 积分量=积分量+KI*误差量
+        I_Integral = I_Integral + IErr0 * ILOOP_KI;
+
+        // 积分量双向限幅，避免过流后深度积分导致输出急拉和啸叫。
+        if (I_Integral > ILOOP_INTEGRAL_LIMIT)
+            I_Integral = ILOOP_INTEGRAL_LIMIT;
+        if (I_Integral < -ILOOP_INTEGRAL_LIMIT)
+            I_Integral = -ILOOP_INTEGRAL_LIMIT;
+
+        if (i0 > ILOOP_VREF_STEP_LIMIT)
+            i0 = ILOOP_VREF_STEP_LIMIT;
+        if (i0 < -ILOOP_VREF_STEP_LIMIT)
+            i0 = -ILOOP_VREF_STEP_LIMIT;
+
+        i_vref_offset -= i0;
+        if (i_vref_offset < 0)
+            i_vref_offset = 0;
+        if (i_vref_offset > ILOOP_VREF_OFFSET_LIMIT)
+            i_vref_offset = ILOOP_VREF_OFFSET_LIMIT;
+    }
 
     if (DF.SMFlag == Rise && VoutTemp < CtrValue.Vout_ref / 2){ // 判断是否在软启动状态
 
-        CtrValue.Vout_ref = CtrValue.Vout_ref + i0;  // 输出参考电压加上电流环计算结果
-        CVCC_Mode = CC;                              // 恒流模式
+        CtrValue.Vout_ref = CtrValue.Vout_ref - i_vref_offset;  // 输出参考电压减去电流环限流偏移
+        CVCC_Mode = (i_vref_offset > 0) ? CC : CV;              // 恒流模式
         if (CtrValue.Vout_ref > CtrValue.Vout_SSref){ // 输出参考电压超过软启动设置电压时限制在软启动设置电压
             CtrValue.Vout_ref = CtrValue.Vout_SSref; // 限制输出参考电压
             CVCC_Mode = CV;                          // 恒压模式
@@ -82,8 +110,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         }
     }
     else{
-        CtrValue.Vout_ref = CtrValue.Vout_ref + i0;   // 输出参考电压加上电流环计算结果
-        CVCC_Mode = CC;                               // 恒流模式
+        CtrValue.Vout_ref = CtrValue.Vout_ref - i_vref_offset;  // 输出参考电压减去电流环限流偏移
+        CVCC_Mode = (i_vref_offset > 0) ? CC : CV;              // 恒流模式
         if (CtrValue.Vout_ref > CtrValue.Vout_SETref){ // 输出参考电压超过设置电压时限制在设置电压
             CtrValue.Vout_ref = CtrValue.Vout_SETref; // 限制输出参考电压
             CVCC_Mode = CV;                           // 恒压模式
@@ -103,6 +131,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         VErr2 = 0;
         VErr0 = 0;
         I_Integral = 0;
+        i_vref_offset = 0;
         i0 = 0;
         IErr0 = 0;
         IErr1 = 0;
@@ -126,6 +155,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             u0 = 0;
             u1 = 0;
             i0 = 0;
+            i_vref_offset = 0;
             I_Integral = 0;
             IErr0 = 0;
             IErr1 = 0;

@@ -25,7 +25,7 @@
 #define CCRAM_BSS __attribute__((section(".ccmram_bss")))
 
 #define ADC_MAX_VALUE 4095.0F				   // ADC最大值
-#define REF_3V3 3.2806F						   // VREF参考电压
+#define REF_3V3 3.294F						   // VREF参考电压
 
 #define POWER_CTRL_DEFAULT_SET_VOLTAGE       5.0F   // 默认输出电压
 #define POWER_CTRL_DEFAULT_SET_CURRENT       1.0F  // 默认输出电流
@@ -107,7 +107,7 @@
 #define CAL_VOUT_K 4132 // 输出电压矫正K值
 #define CAL_VOUT_B 9	// 输出电压矫正B值
 #define CAL_IOUT_K 4095 // 输出电流矫正K值
-#define CAL_IOUT_B 1	// 输出电流矫正B值
+#define CAL_IOUT_B 10	// 输出电流矫正B值
 
 /***************故障类型*****************/
 
