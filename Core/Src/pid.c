@@ -58,8 +58,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     int32_t VoutTemp = (ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B; // 获取矫正后的输出电压
     int32_t IoutTemp = (ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B; // 获取矫正后的输出电流
 
-    // 计算电流误差量，当输出电流小于参考电流，输出量增加
-    IErr0 = CtrValue.Iout_ref - IoutTemp;
+    // 输出电流采样为低于偏置代表正电流；低于参考码表示过流，需要降低电压参考。
+    IErr0 = IoutTemp - CtrValue.Iout_ref;
     // 电流环路输出= 积分量 + KP*误差量 + KD*当前误差减上次误差
     i0 = I_Integral + IErr0 * ILOOP_KP + (IErr0 - IErr1) * ILOOP_KD;
     // 积分量=积分量+KI*误差量

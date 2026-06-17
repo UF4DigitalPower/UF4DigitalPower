@@ -270,7 +270,15 @@ static uint16_t s_UF4Transport_GetFanSetPermille(void)
 static void s_UF4Transport_UpdateControlReferenceFromSetting(void)
 {
     CtrValue.Vout_SETref = (int32_t)((SET_Value.Vout / BSP_POWER_VOUT_SENSE_SCALE) / REF_3V3 * ADC_MAX_VALUE);
-    CtrValue.Iout_ref = (int32_t)(((BSP_POWER_CURRENT_BIAS_V + SET_Value.Iout * BSP_POWER_CURRENT_SENSE_V_PER_A) / REF_3V3) * ADC_MAX_VALUE);
+    CtrValue.Iout_ref = (int32_t)(((BSP_POWER_CURRENT_BIAS_V - SET_Value.Iout * BSP_POWER_CURRENT_SENSE_V_PER_A) / REF_3V3) * ADC_MAX_VALUE);
+    if(CtrValue.Iout_ref > (int32_t)ADC_MAX_VALUE)
+    {
+        CtrValue.Iout_ref = (int32_t)ADC_MAX_VALUE;
+    }
+    if(CtrValue.Iout_ref < 0)
+    {
+        CtrValue.Iout_ref = 0;
+    }
 }
 
 static void s_UF4Transport_UpdateReadRegisters(void)

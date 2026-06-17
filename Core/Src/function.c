@@ -374,13 +374,13 @@ void StateMRise(void){
         // 将设置值传到参考值
 
         CtrValue.Vout_SETref = (int32_t)((SET_Value.Vout / BSP_POWER_VOUT_SENSE_SCALE) / REF_3V3 * ADC_MAX_VALUE);
-        CtrValue.Iout_ref    = (int32_t)(((BSP_POWER_CURRENT_BIAS_V + SET_Value.Iout * BSP_POWER_CURRENT_SENSE_V_PER_A) / REF_3V3) * ADC_MAX_VALUE);
+        CtrValue.Iout_ref    = (int32_t)(((BSP_POWER_CURRENT_BIAS_V - SET_Value.Iout * BSP_POWER_CURRENT_SENSE_V_PER_A) / REF_3V3) * ADC_MAX_VALUE);
 
         // Clamp to valid ADC range
         // if (CtrValue.Vout_SETref > (int32_t)ADC_MAX_VALUE) CtrValue.Vout_SETref = (int32_t)ADC_MAX_VALUE;
         // if (CtrValue.Vout_SETref < 0) CtrValue.Vout_SETref = 0;
-        // if (CtrValue.Iout_ref > (int32_t)ADC_MAX_VALUE) CtrValue.Iout_ref = (int32_t)ADC_MAX_VALUE;
-        // if (CtrValue.Iout_ref < 0) CtrValue.Iout_ref = 0;
+        if (CtrValue.Iout_ref > (int32_t)ADC_MAX_VALUE) CtrValue.Iout_ref = (int32_t)ADC_MAX_VALUE;
+        if (CtrValue.Iout_ref < 0) CtrValue.Iout_ref = 0;
         // 跳转至软启等待状态
         STState = SSWait;
 
@@ -454,7 +454,7 @@ void ShortOff(void){
     static int32_t RSCnt = 0;
     static uint8_t RSNum = 0;
     float Vout = SADC.Vout * REF_3V3 / ADC_MAX_VALUE * BSP_POWER_VOUT_SENSE_SCALE;
-    float Iout = (SADC.Iout * REF_3V3 / ADC_MAX_VALUE - BSP_POWER_CURRENT_BIAS_V) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+    float Iout = (BSP_POWER_CURRENT_BIAS_V - SADC.Iout * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
     // 当输出电流大于 *A，且电压小于*V时，可判定为发生短路保护
     if (Iout > POWER_CTRL_SHORT_CURRENT && Vout < POWER_CTRL_SHORT_VOLTAGE){
         DF.PWMENFlag = 0; // 关闭PWM
@@ -522,7 +522,7 @@ void OCP(void){
     static uint16_t RSCnt = 0;    // 故障清楚保持计数器定义
     static uint16_t RSNum = 0;    // 保留保护重启计数器
 
-    float Iout = (SADC.Iout * REF_3V3 / ADC_MAX_VALUE - BSP_POWER_CURRENT_BIAS_V) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+    float Iout = (BSP_POWER_CURRENT_BIAS_V - SADC.Iout * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
     // 当输出电流大于*A，且保持50ms
     if (Iout >= MAX_VOUT_OCP_VAL && DF.SMFlag == Run){
