@@ -329,9 +329,9 @@ static void s_UF4Transport_ApplyWriteRegisters(void)
     float ocp = (float)s_id_ocp_set_value / 1000.0F;
     uint16_t fan_set = s_id_fan_set_value;
 
-    if(fan_set > 1000U)
+    if(fan_set > (POWER_CTRL_FAN_MAX_RUN_DUTY * 10U))
     {
-        fan_set = 1000U;
+        fan_set = POWER_CTRL_FAN_MAX_RUN_DUTY * 10U;
     }
 
     SET_Value.Vout = set_voltage;
@@ -571,7 +571,7 @@ void UF4Transport_Init(void)
     memset(&s_uf4_transport, 0, sizeof(s_uf4_transport));
     s_uf4_transport.selected_port = s_UF4Transport_GetFixedPort();
     s_uf4_transport.fan_manual_enable = 1U;
-    s_uf4_transport.fan_set_permille = 1000U;
+    s_uf4_transport.fan_set_permille = POWER_CTRL_FAN_MAX_RUN_DUTY * 10U;
     s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
 
     for(i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
@@ -579,7 +579,7 @@ void UF4Transport_Init(void)
         s_uf4_transport.channels[i].port = (UF4Transport_Port)i;
     }
 
-    FAN_PWM_set(100U);
+    FAN_PWM_set(POWER_CTRL_FAN_MAX_RUN_DUTY);
     s_UF4Transport_UpdateReadRegisters();
     UF4_IDTableBind(s_uf4_id_table, sizeof(s_uf4_id_table) / sizeof(s_uf4_id_table[0]));
     UF4_Init(s_UF4Transport_Uf4Tx, NULL);

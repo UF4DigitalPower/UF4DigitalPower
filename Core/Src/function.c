@@ -176,7 +176,7 @@ RAMFUNC void ADCSample(void){
     static uint32_t VinAvgSum = 0, IinAvgSum = 0, VoutAvgSum = 0, IoutAvgSum = 0;
 
     // 从DMA缓冲器中获取数据
-    SADC.Vin  = (uint32_t)ADC1_RESULT[0];
+    SADC.Vin  = (uint32_t)((ADC1_RESULT[0] * CAL_VIN_K >> 12) + CAL_VIN_B);
     SADC.Iin  = (uint32_t)ADC1_RESULT[1];
     SADC.Vout = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
     SADC.Iout = (uint32_t)((ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B);
@@ -210,9 +210,9 @@ void ADC_calculate(void){
     VOUT = SADC.VoutAvg * REF_3V3 / ADC_MAX_VALUE * BSP_POWER_VOUT_SENSE_SCALE;  // 计算ADC1通道2输出电压采样结果
     IOUT = (BSP_POWER_CURRENT_BIAS_V - SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
-    if (IIN < 0.0F)
+    if (IIN < BSP_POWER_IIN_ZERO_DEADBAND_A)
         IIN = 0.0F;
-    if (IOUT < 0.0F)
+    if (IOUT < BSP_POWER_IOUT_ZERO_DEADBAND_A)
         IOUT = 0.0F;
 
     Board1_TEMP = GET_NTC1_Temperature();  // 获取NTC1温度
@@ -676,10 +676,6 @@ void FAN_PWM_set(uint16_t dutyCycle){
     uint32_t tick_now = HAL_GetTick();
     uint32_t compare_value;
 
-    if (dutyCycle > 100){
-        dutyCycle = 100;
-    }
-
     if (dutyCycle == 0U){
         fan_active = 0U;
         fan_kick_until = 0U;
@@ -689,6 +685,9 @@ void FAN_PWM_set(uint16_t dutyCycle){
 
     if (dutyCycle < POWER_CTRL_FAN_MIN_RUN_DUTY){
         dutyCycle = POWER_CTRL_FAN_MIN_RUN_DUTY;
+    }
+    if (dutyCycle > POWER_CTRL_FAN_MAX_RUN_DUTY){
+        dutyCycle = POWER_CTRL_FAN_MAX_RUN_DUTY;
     }
 
     if (fan_active == 0U){

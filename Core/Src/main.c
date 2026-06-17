@@ -121,19 +121,19 @@ int main(void)
   DF.SMFlag = Init;                         // 初始化状态机
 
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3); // 启动定时器8和通道3的PWM输出
-  FAN_PWM_set(100);                         // 设置风扇转速为100%
+  FAN_PWM_set(POWER_CTRL_FAN_MAX_RUN_DUTY); // 设置风扇转速到安全上限
 
   HAL_TIM_Base_Start_IT(&htim6);            // 启动定时器2和定时器中断，1kHz
   HAL_TIM_Base_Start_IT(&htim7);            // 启动定时器3和定时器中断，200Hz
   HAL_TIM_Base_Start_IT(&htim16);           // 启动定时器4和定时器中断，100Hz
-  // Key_Init();                            // 按键状态机初始化
+
   PID_Init();                               // PID初始化
   ValInit();                                // 先装载默认值，供 Flash 首次初始化和非法数据兜底使用
   Init_Flash();                             // Flash初始化
   Read_Flash();                             // 读取Flash数据
   UF4Transport_Init();                            // UF4 传输初始化，默认走 USB CDC
 
-  HAL_GPIO_WritePin(DIV_SW_GPIO_Port, DIV_SW_Pin, GPIO_PIN_SET);  // 启动DIV_SW引脚
+  HAL_GPIO_WritePin(DIV_SW_GPIO_Port, DIV_SW_Pin, GPIO_PIN_SET);  // 启动栅极驱动器
 
   HAL_Delay(100);                                        // 延时100ms，等待供电稳定
 

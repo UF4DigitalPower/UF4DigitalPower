@@ -33,8 +33,9 @@
 #define POWER_CTRL_DEFAULT_OVP_SET           45.0F  // 默认过压值 45v
 #define POWER_CTRL_DEFAULT_OCP_SET           10.0F  // 默认过流值 10A
 
-#define POWER_CTRL_FAN_MIN_RUN_DUTY          35U    // 风扇非零运行时的最小占空比
-#define POWER_CTRL_FAN_STARTUP_KICK_DUTY     100U   // 风扇启动强启占空比
+#define POWER_CTRL_FAN_MIN_RUN_DUTY          5U    // 风扇非零运行时的最小占空比
+#define POWER_CTRL_FAN_MAX_RUN_DUTY          95U    // 风扇运行时的最大安全占空比
+#define POWER_CTRL_FAN_STARTUP_KICK_DUTY     POWER_CTRL_FAN_MAX_RUN_DUTY   // 风扇启动强启占空比
 #define POWER_CTRL_FAN_STARTUP_KICK_MS       300U   // 风扇启动强启持续时间
 
 
@@ -81,6 +82,8 @@
 #define BSP_POWER_IOUT_SCALE                 1.0F
 #define BSP_POWER_IIN_GAIN                   BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IIN_SCALE
 #define BSP_POWER_IOUT_GAIN                  BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IOUT_SCALE
+#define BSP_POWER_IIN_ZERO_DEADBAND_A        0.08F  // 输入电流零点死区，抑制空载零点抖动上报
+#define BSP_POWER_IOUT_ZERO_DEADBAND_A       0.08F  // 输出电流零点死区，抑制空载零点抖动上报
 
 // 硬件定时器参数
 #define BSP_POWER_HRTIM_PERIOD_TICK          27200U  // 27200 tick @ 5.44 GHz 等效 HRTIM 时钟
@@ -99,8 +102,10 @@
 #define MAX_SHORT_I 10.1F   // 短路电流判据
 #define MIN_SHORT_V 0.5F    // 短路电压判据
 
-#define CAL_VOUT_K 4099 // 输出电压矫正K值
-#define CAL_VOUT_B 1	// 输出电压矫正B值
+#define CAL_VIN_K 4010  // 输入电压矫正K值
+#define CAL_VIN_B 32    // 输入电压矫正B值
+#define CAL_VOUT_K 4132 // 输出电压矫正K值
+#define CAL_VOUT_B 9	// 输出电压矫正B值
 #define CAL_IOUT_K 4095 // 输出电流矫正K值
 #define CAL_IOUT_B 1	// 输出电流矫正B值
 
