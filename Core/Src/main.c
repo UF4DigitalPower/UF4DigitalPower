@@ -127,15 +127,17 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim7);            // 启动定时器3和定时器中断，200Hz
   HAL_TIM_Base_Start_IT(&htim16);           // 启动定时器4和定时器中断，100Hz
 
+  StatusLed_Init();                         // 初始化三色状态指示灯
+
   PID_Init();                               // PID初始化
   ValInit();                                // 先装载默认值，供 Flash 首次初始化和非法数据兜底使用
   Init_Flash();                             // Flash初始化
   Read_Flash();                             // 读取Flash数据
-  UF4Transport_Init();                            // UF4 传输初始化，默认走 USB CDC
+  UF4Transport_Init();                      // UF4COM初始化
 
   HAL_GPIO_WritePin(DIV_SW_GPIO_Port, DIV_SW_Pin, GPIO_PIN_SET);  // 启动栅极驱动器
 
-  HAL_Delay(100);                                        // 延时100ms，等待供电稳定
+  HAL_Delay(100);                            // 延时100ms，等待供电稳定
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED); // 校准ADC1
   HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED); // 校准ADC2
@@ -150,7 +152,7 @@ int main(void)
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_D);              // 开启HRTIM波形计数器
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP); // 开启HRTIM定时器D的中断
 
-  StatusLed_Init();                         // 初始化三色状态指示灯
+
   /* USER CODE END 2 */
 
   /* Infinite loop */

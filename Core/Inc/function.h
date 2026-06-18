@@ -28,21 +28,21 @@
 #define REF_3V3 3.294F						   // VREF参考电压
 
 #define POWER_CTRL_DEFAULT_SET_VOLTAGE       5.0F   // 默认输出电压
-#define POWER_CTRL_DEFAULT_SET_CURRENT       1.0F  // 默认输出电流
+#define POWER_CTRL_DEFAULT_SET_CURRENT       1.0F   // 默认输出电流
 #define POWER_CTRL_DEFAULT_OTP_SET           80.0F  // 默认OTP值
 #define POWER_CTRL_DEFAULT_OVP_SET           45.0F  // 默认过压值 45v
 #define POWER_CTRL_DEFAULT_OCP_SET           10.0F  // 默认过流值 10A
 
-#define POWER_CTRL_FAN_MIN_RUN_DUTY          5U    // 风扇非零运行时的最小占空比
+#define POWER_CTRL_FAN_MIN_RUN_DUTY          5U     // 风扇非零运行时的最小占空比
 #define POWER_CTRL_FAN_MAX_RUN_DUTY          95U    // 风扇运行时的最大安全占空比
-#define POWER_CTRL_FAN_STARTUP_KICK_DUTY     POWER_CTRL_FAN_MAX_RUN_DUTY   // 风扇启动强启占空比
+#define POWER_CTRL_FAN_STARTUP_KICK_DUTY     95U    // 风扇启动强启占空比
 #define POWER_CTRL_FAN_STARTUP_KICK_MS       300U   // 风扇启动强启持续时间
 
 
-#define POWER_CTRL_VIN_OVP                5.0F  // 输入过压阈值
+#define POWER_CTRL_VIN_OVP                5.0F      // 输入过压阈值
 
-#define POWER_CTRL_SHORT_CURRENT          10.0F  // 短接电流阈值
-#define POWER_CTRL_SHORT_VOLTAGE          0.5F    // 短接电压阈值
+#define POWER_CTRL_SHORT_CURRENT          10.0F     // 短接电流阈值
+#define POWER_CTRL_SHORT_VOLTAGE          0.5F      // 短接电压阈值
 
 /*
  * 从当前 200 kHz HRTIM的参考项目中重新离散
@@ -78,6 +78,7 @@
 #define BSP_POWER_CURRENT_AMP_GAIN           20.0F  // INA240A1放大倍数
 #define BSP_POWER_CURRENT_BIAS_V             1.650F // 中点偏置电压
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)  // 每安培对应的采样电压
+
 #define BSP_POWER_IIN_SCALE                  1.0F
 #define BSP_POWER_IOUT_SCALE                 1.0F
 #define BSP_POWER_IIN_GAIN                   BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IIN_SCALE
@@ -104,8 +105,10 @@
 
 #define CAL_VIN_K 4010  // 输入电压矫正K值
 #define CAL_VIN_B 32    // 输入电压矫正B值
+
 #define CAL_VOUT_K 4132 // 输出电压矫正K值
 #define CAL_VOUT_B 9	// 输出电压矫正B值
+
 #define CAL_IOUT_K 4095 // 输出电流矫正K值
 #define CAL_IOUT_B 10	// 输出电流矫正B值
 
