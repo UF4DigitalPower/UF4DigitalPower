@@ -221,14 +221,17 @@ extern volatile uint8_t LED_Middle_Flag;		// 蜂鸣器中等时间长度鸣叫�
 extern struct _Ctr_value CtrValue;				// 控制参数
 extern struct _FLAG DF;							// 控制标志位
 extern struct _ADI SADC;						// 采样变量
+extern volatile _CVCC_Mode CVCC_Mode;			// 电源模式
+extern struct _SET_Value SET_Value;				// 设置参数
+
 extern volatile float VIN, VOUT, IIN, IOUT;		// 电压电流实际值
 extern volatile float Board1_TEMP, Board2_TEMP,CPU_TEMP; // 主板和CPU温度实际值
 extern volatile float MAX_OTP_VAL;              // 过温保护阈值
 extern volatile float MAX_VOUT_OVP_VAL;         // 输出过压保护阈值
 extern volatile float MAX_VOUT_OCP_VAL;         // 输出过流保护阈值
 extern volatile float powerEfficiency;			// 电源转换效率
-extern volatile _CVCC_Mode CVCC_Mode;			// 电源模式
-extern struct _SET_Value SET_Value;				// 设置参数
+
+
 extern volatile uint8_t g_mode_switch_inject_valid;   // 模式切换占空注入有效标志
 extern volatile int16_t g_mode_switch_buck_duty;      // 模式切换预置 Buck 占空
 extern volatile int16_t g_mode_switch_boost_duty;     // 模式切换预置 Boost 占空
@@ -288,7 +291,6 @@ void OVP(void);
 void OCP(void);
 void ShortOff(void);
 
-float GET_CPU_Temperature(void);
 void FAN_PWM_set(uint16_t pwm);
 void Init_Flash(void);
 void Update_Flash(void);

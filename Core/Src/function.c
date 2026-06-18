@@ -314,6 +314,7 @@ void PowerControl_DisableOutput(void){
 
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK);
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, BSP_POWER_HRTIM_PERIOD_TICK >> 1);
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, BSP_POWER_BOOST_DUTY_MIN_TICK);
@@ -323,10 +324,11 @@ void PowerControl_DisableOutput(void){
  * @brief 处理故障状态。
  * 关闭 PWM 输出，并在故障清除后允许状态机回到等待态。
  */
-void StateMErr(void){
+void StateMErr(void)
+{
     PowerControl_DisableOutput();
-    // 若故障消除跳转至等待重新软启
-    if (DF.ErrFlag == F_NOERR){
+    if (DF.ErrFlag == F_NOERR)
+    {    // 若故障消除跳转至等待重新软启
         DF.SMFlag = Wait;
     }
 }
@@ -335,19 +337,16 @@ void StateMErr(void){
  * 等待输出使能与无故障条件满足后进入软启动流程。
  */
 void StateMWait(void){
-    // 计数器定义
-    static uint16_t CntS = 0;
-    static uint32_t IinSum = 0, IoutSum = 0;
+    static uint16_t CntS = 0;  // 计数器定义
     PowerControl_DisableOutput();
     CntS++; // 计数器累加
     if (CntS > 200){    // 等待1S，进入启动状态
         CntS = 200;
-        if (DF.ErrFlag == F_NOERR && DF.OUTPUT_Flag == 1){
+        if (DF.ErrFlag == F_NOERR && DF.OUTPUT_Flag == 1)
+        {
             CntS = 0;            // 计数器清0
-            IinSum = 0;
-            IoutSum = 0;
-            DF.SMFlag = Rise;            // 状态标志位跳转至等待状态
-            STState = SSInit;            // 软启动子状态跳转至初始化状态
+            DF.SMFlag = Rise;    // 状态标志位跳转至等待状态
+            STState = SSInit;    // 软启动子状态跳转至初始化状态
         }
     }
 }
@@ -371,14 +370,12 @@ void StateMRise(void){
         VErr2 = 0;
         u0 = 0;
         u1 = 0;
-        // 将设置值传到参考值
 
+        // 将设置值传到参考值
         CtrValue.Vout_SETref = (int32_t)((SET_Value.Vout / BSP_POWER_VOUT_SENSE_SCALE) / REF_3V3 * ADC_MAX_VALUE);
         CtrValue.Iout_ref    = (int32_t)(((BSP_POWER_CURRENT_BIAS_V - SET_Value.Iout * BSP_POWER_CURRENT_SENSE_V_PER_A) / REF_3V3) * ADC_MAX_VALUE);
 
-        // Clamp to valid ADC range
-        // if (CtrValue.Vout_SETref > (int32_t)ADC_MAX_VALUE) CtrValue.Vout_SETref = (int32_t)ADC_MAX_VALUE;
-        // if (CtrValue.Vout_SETref < 0) CtrValue.Vout_SETref = 0;
+        // 将钳位锁定在有效的ADC范围
         if (CtrValue.Iout_ref > (int32_t)ADC_MAX_VALUE) CtrValue.Iout_ref = (int32_t)ADC_MAX_VALUE;
         if (CtrValue.Iout_ref < 0) CtrValue.Iout_ref = 0;
         // 跳转至软启等待状态
@@ -388,12 +385,9 @@ void StateMRise(void){
     }
     // 等待软启动状态
     case SSWait:{
-        // 计数器累加
-        Cnt++;
-        // 等待25ms
-        if (Cnt > 5){
-            // 计数器清0
-            Cnt = 0;
+        Cnt++;  // 计数器累加
+        if (Cnt > 5){  // 等待25ms
+            Cnt = 0;   // 计数器清0
             // 限制启动占空比
             CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
             CtrValue.BUCKMaxDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
@@ -532,10 +526,8 @@ void OCP(void){
             DF.PWMENFlag = 0; // 关闭PWM
             HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
             HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
-            // 故障标志位
-            setRegBits(DF.ErrFlag, F_SW_IOUT_OCP);
-            // 跳转至故障状态
-            DF.SMFlag = Err;
+            setRegBits(DF.ErrFlag, F_SW_IOUT_OCP); // 故障标志位
+            DF.SMFlag = Err;  // 跳转至故障状态
         }
     }
     else
@@ -543,14 +535,13 @@ void OCP(void){
         OCPCnt = 0;
 
     // 输出过流后恢复
-    // 当发生输出软件过流保护，关机后等待4S后清楚故障信息，进入等待状态等待重启
+    // 当发生输出软件过流保护，关机后等待4S后清除故障信息，进入等待状态等待重启
     if (getRegBits(DF.ErrFlag, F_SW_IOUT_OCP)){
-        // 等待故障清楚计数器累加
-        RSCnt++;
+        RSCnt++; // 等待故障清除计数器累加
         // 等待2S
         if (RSCnt > 400){
-            RSCnt = 0;// 计数器清零
-            RSNum++;// 过流重启计数器累加
+            RSCnt = 0;  // 计数器清零
+            RSNum++;    // 过流重启计数器累加
 
             if (RSNum > 10){// 过流重启只重启10次，10次后不重启（严重故障）
                 RSNum = 11;// 确保不清除故障，不重启
@@ -572,8 +563,8 @@ void OCP(void){
  * 函数需放5ms中断里执行。
  */
 void OTP(void){
-    float TEMP1 = GET_NTC1_Temperature(); // 获取NTC1温度值
-    float TEMP2 = GET_NTC2_Temperature(); // 获取NTC2温度值
+    const float TEMP1 = GET_NTC1_Temperature(); // 获取NTC1温度值
+    const float TEMP2 = GET_NTC2_Temperature(); // 获取NTC2温度值
     if (TEMP1 >= MAX_OTP_VAL || TEMP2 >= MAX_OTP_VAL){
 
         DF.SMFlag = Wait;
@@ -582,6 +573,7 @@ void OTP(void){
         HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
         setRegBits(DF.ErrFlag, F_OTP);                                               // 故障标志位
         DF.SMFlag = Err;                                                             // 跳转至故障状态
+        FAN_PWM_set(POWER_CTRL_FAN_MAX_RUN_DUTY);                          // 风扇散热
     }
 }
 
