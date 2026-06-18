@@ -1,0 +1,40 @@
+{
+  "project": "F4CP",
+  "kind": "Power",
+  "version": "v1.2.0",
+  "device": "STM32G474CBT6",
+  "hardware": "F4CP-G474-Power",
+  "channel": "stable",
+  "date": "2026-06-17",
+  "min_client": "1.0.0",
+  "files": {
+    "bin": {
+      "name": "F4CP-Power-v1.2.0.bin",
+      "download_url": "/api/v1/firmware/power/versions/v1.2.0/download?type=bin",
+      "sha256": "a7674df8a5283a30c0ff61d9a6ce134858213a077f042d6de55a4ff9695287ba",
+      "size": 55572
+    },
+    "hex": {
+      "name": "F4CP-Power-v1.2.0.hex",
+      "download_url": "/api/v1/firmware/power/versions/v1.2.0/download?type=hex",
+      "sha256": "77c9064c39b67e12717bc2c7c81be205e43d9265b2426cc60749fa7730f8cdf3",
+      "size": 156396
+    }
+  },
+  "burn": {
+    "method": "pyocd",
+    "target": "stm32g474cbtx",
+    "reset_after_download": true
+  },
+  "changelog_url": "/api/v1/firmware/power/versions/v1.2.0/changelog",
+  "notes": [
+    "推荐版发布 v1.2.0",
+    "适用设备：F4CP-POWER / STM32G474CBT6",
+    "修正输入电压、输出电压和输出电流校准参数，REF_3V3 更新为 3.294V",
+    "修复输出电流采样极性导致限流失效的问题，统一 PID、OCP 与短路保护的电流方向",
+    "优化电流环限流策略，支持累计拉低输出参考并在退出限流后缓慢释放",
+    "增加输入/输出电流零点死区，抑制空载上报抖动",
+    "调整风扇 PWM 占空比安全边界并降低 PB9 输出速率",
+    "发布日期：2026-06-17"
+  ]
+}

@@ -18,6 +18,7 @@
 
 #define UF4_TRANSPORT_CHANNEL_COUNT 3U
 #define UF4_TRANSPORT_STREAM_PERIOD_MS 20U
+#define UF4_TRANSPORT_UART1_CDC_MIRROR 1U
 
 typedef struct
 {
@@ -512,6 +513,20 @@ static void s_UF4Transport_Uf4WriteApply(void *user)
     s_UF4Transport_UpdateReadRegisters();
 }
 
+static void s_UF4Transport_MirrorUartRxToCdc(UF4Transport_Port port, const uint8_t *data, uint16_t len)
+{
+#if UF4_TRANSPORT_UART1_CDC_MIRROR
+    if((port == UF4_TRANSPORT_PORT_USART1) && (data != NULL) && (len > 0U) && (s_UF4Transport_CdcTxIdle() != 0U))
+    {
+        (void)CDC_Transmit_FS((uint8_t *)data, len);
+    }
+#else
+    (void)port;
+    (void)data;
+    (void)len;
+#endif
+}
+
 static void s_UF4Transport_ProcessUartRxWindow(UF4Transport_Port port, uint8_t *buffer, uint16_t *last_pos, uint16_t current_pos)
 {
     if(current_pos > UF4_TRANSPORT_UART_RX_DMA_SIZE)
@@ -521,18 +536,22 @@ static void s_UF4Transport_ProcessUartRxWindow(UF4Transport_Port port, uint8_t *
 
     if(current_pos > *last_pos)
     {
+        s_UF4Transport_MirrorUartRxToCdc(port, &buffer[*last_pos], (uint16_t)(current_pos - *last_pos));
         (void)UF4_InputBuffer(&buffer[*last_pos], (uint16_t)(current_pos - *last_pos));
     }
     else if(current_pos < *last_pos)
     {
+        s_UF4Transport_MirrorUartRxToCdc(port, &buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
         (void)UF4_InputBuffer(&buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
         if(current_pos > 0U)
         {
+            s_UF4Transport_MirrorUartRxToCdc(port, buffer, current_pos);
             (void)UF4_InputBuffer(buffer, current_pos);
         }
     }
     else if(current_pos == UF4_TRANSPORT_UART_RX_DMA_SIZE)
     {
+        s_UF4Transport_MirrorUartRxToCdc(port, &buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
         (void)UF4_InputBuffer(&buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
     }
 

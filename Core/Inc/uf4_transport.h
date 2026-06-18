@@ -32,7 +32,7 @@ typedef enum
 } UF4Transport_Port;
 
 #ifndef UF4_TRANSPORT_FIXED_PORT
-#define UF4_TRANSPORT_FIXED_PORT UF4_TRANSPORT_PORT_CDC
+#define UF4_TRANSPORT_FIXED_PORT UF4_TRANSPORT_PORT_USART1
 #endif
 
 void UF4Transport_Init(void);
