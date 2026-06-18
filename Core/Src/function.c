@@ -84,6 +84,13 @@ volatile int16_t g_mode_switch_buck_duty = BSP_POWER_BUCK_DUTY_MIN_TICK;
 volatile int16_t g_mode_switch_boost_duty = BSP_POWER_BOOST_DUTY_MIN_TICK;
 volatile int32_t g_mode_switch_u_seed = 0;
 
+#define BB_MODE_BUCK_TO_MIX_RATIO       0.95F
+#define BB_MODE_MIX_TO_BUCK_RATIO       0.90F
+#define BB_MODE_MIX_TO_BOOST_RATIO      1.10F
+#define BB_MODE_BOOST_TO_MIX_RATIO      1.05F
+#define BB_MODE_VIN_DROP_FILTER_SHIFT   3U
+#define BB_MODE_MIX_BOOST_PRESET_STEP   BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK
+
 static int16_t s_PowerControl_ClampDutyTick(int32_t duty_tick, int16_t min_tick, int16_t max_tick)
 {
     if (duty_tick < min_tick){
@@ -106,9 +113,9 @@ static int32_t s_PowerControl_DutyTickToLoopSeed(int16_t duty_tick)
  * 让快环直接从新模式附近起步，而不是背着旧模式积分慢慢追。
  * @param target_mode 目标工作模式
  * @param vin_adc 当前输入电压 ADC 平均值
- * @param vout_ref 当前输出参考 ADC 值
+ * @param vout_adc 当前输出电压 ADC 校正值
  */
-void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t vout_ref)
+void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t vout_adc)
 {
     float vin_f;
     float vout_f;
@@ -117,13 +124,13 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
     int16_t boost_duty = CtrValue.BoostDuty;
     int32_t u_seed = 0;
 
-    if (vin_adc == 0U || vout_ref <= 0){
+    if (vin_adc == 0U || vout_adc == 0U){
         g_mode_switch_inject_valid = 0U;
         return;
     }
 
     vin_f = (float)vin_adc;
-    vout_f = (float)vout_ref;
+    vout_f = (float)vout_adc;
 
     switch (target_mode){
         case Buck:
@@ -140,6 +147,9 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
             boost_duty = s_PowerControl_ClampDutyTick((int32_t)(duty_ratio * BSP_POWER_HRTIM_PERIOD_TICK + 0.5F),
                                                       BSP_POWER_BOOST_DUTY_MIN_TICK,
                                                       CtrValue.BoostMaxDuty);
+            if (boost_duty > CtrValue.BoostDuty + BB_MODE_MIX_BOOST_PRESET_STEP){
+                boost_duty = (int16_t)(CtrValue.BoostDuty + BB_MODE_MIX_BOOST_PRESET_STEP);
+            }
             buck_duty = CtrValue.BuckDuty;
             u_seed = s_PowerControl_DutyTickToLoopSeed(boost_duty);
             break;
@@ -579,16 +589,17 @@ void OTP(void){
 
 /**
  * @brief 运行模式判断。
- * BUCK模式：输出参考电压<0.8倍输入电压
- * BOOST模式：输出参考电压>1.2倍输入电压
- * MIX模式：1.15倍输入电压>输出参考电压>0.85倍输入电压
- * 当进入MIX（buck-boost）模式后，退出到BUCK或者BOOST时需要滞缓，防止在临界点来回振荡
+ * BUCK模式：实际输出电压低于输入电压，Buck 仍有足够调节余量
+ * BOOST模式：实际输出电压明显高于输入电压
+ * MIX模式：实际输出电压接近输入电压，用回差防止在临界点来回振荡
  */
 RAMFUNC void BBMode(void){
     uint8_t PreBBFlag = 0;// 上一次模式状态量
     PreBBFlag = DF.BBFlag;// 暂存当前的模式状态量
 
     uint32_t VIN_ADC = ADC1_RESULT[0]; // 输入电压ADC采样值
+    uint32_t VOUT_ADC = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B); // 输出电压ADC校正值
+    static uint32_t VIN_MODE_REF = 0;
 
     // 对输入电压ADC采样值累计取平均值
     static uint32_t VIN_ADC_SUM = 0;
@@ -604,9 +615,20 @@ RAMFUNC void BBMode(void){
         VIN_ADC_Count = 0;
     }
 
+    if (VIN_MODE_REF == 0U){
+        VIN_MODE_REF = VIN_ADC;
+    }
+    else if (VIN_ADC > VIN_MODE_REF){
+        VIN_MODE_REF = VIN_ADC;
+    }
+    else{
+        VIN_MODE_REF -= (VIN_MODE_REF - VIN_ADC) >> BB_MODE_VIN_DROP_FILTER_SHIFT;
+    }
+
     if (DF.OUTPUT_Flag == 0U || DF.PWMENFlag == 0U || CtrValue.Vout_ref <= 0){
         DF.BBFlag = Buck;
         DF.BBModeChange = 0;
+        VIN_MODE_REF = VIN_ADC;
         return;
     }
 
@@ -614,9 +636,9 @@ RAMFUNC void BBMode(void){
     switch (DF.BBFlag){
         // NA-初始化模式
         case NA:{
-            if (CtrValue.Vout_ref < VIN_ADC * 0.8F)        // 输出参考电压小于0.8倍输入电压时
+            if (VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
                 DF.BBFlag = Buck;                          // 切换到buck模式
-            else if (CtrValue.Vout_ref > VIN_ADC * 1.2F)   // 输出参考电压大于1.2倍输入电压时
+            else if (VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
                 DF.BBFlag = Boost;                         // 切换到boost模式
             else
                 DF.BBFlag = Mix; // buck-boost（MIX） mode
@@ -624,25 +646,25 @@ RAMFUNC void BBMode(void){
         }
         // BUCK模式
         case Buck:{
-            if (CtrValue.Vout_ref > VIN_ADC * 1.2F)         // vout>1.2*vin
+            if (VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
                 DF.BBFlag = Boost;                          // boost mode
-            else if (CtrValue.Vout_ref > VIN_ADC * 0.85F)   // 1.2*vin>vout>0.85*vin
+            else if (VOUT_ADC > VIN_MODE_REF * BB_MODE_BUCK_TO_MIX_RATIO)
                 DF.BBFlag = Mix;                            // buck-boost（MIX） mode
             break;
         }
         // Boost模式
         case Boost:{
-            if (CtrValue.Vout_ref < VIN_ADC * 0.8F)         // vout<0.8*vin
+            if (VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
                 DF.BBFlag = Buck;                           // buck mode
-            else if (CtrValue.Vout_ref < VIN_ADC * 1.15F)   // 0.8*vin<vout<1.15*vin
+            else if (VOUT_ADC < VIN_MODE_REF * BB_MODE_BOOST_TO_MIX_RATIO)
                 DF.BBFlag = Mix;                            // buck-boost（MIX） mode
             break;
         }
         // Mix模式
         case Mix:{
-            if (CtrValue.Vout_ref < VIN_ADC * 0.8F)      // vout<0.8*vin
+            if (VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
                 DF.BBFlag = Buck;                          // buck mode
-            else if (CtrValue.Vout_ref > VIN_ADC * 1.2F) // vout>1.2*vin
+            else if (VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
                 DF.BBFlag = Boost;                         // boost mode
             break;
         }
@@ -652,7 +674,7 @@ RAMFUNC void BBMode(void){
     if (PreBBFlag == DF.BBFlag)
         DF.BBModeChange = 0;
     else{
-        PowerControl_PrepareModeSwitch((BB_M)DF.BBFlag, VIN_ADC, CtrValue.Vout_ref);
+        PowerControl_PrepareModeSwitch((BB_M)DF.BBFlag, VIN_ADC, (int32_t)VOUT_ADC);
         DF.BBModeChange = 1;
     }
 }

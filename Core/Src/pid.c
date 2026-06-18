@@ -25,6 +25,10 @@ CCRAM volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
 CCRAM volatile int32_t u0 = 0, u1 = 0;                  // 电压环输出量
 CCRAM volatile int32_t i0 = 0, i1 = 0;                  // 电流环输出量
 CCRAM volatile _CVCC_Mode CVCC_Mode = CV;               // 恒流恒压模式标志位
+static CCRAM int32_t s_vout_pid_filter = 0;
+static CCRAM uint8_t s_vout_pid_filter_valid = 0U;
+
+#define VLOOP_ADC_FILTER_SHIFT 2U
 
 /**
  * @brief 初始化 PID 环路相关状态量。
@@ -42,6 +46,8 @@ void PID_Init(void)
   IErr0 = 0;
   IErr1 = 0;
   CVCC_Mode = CV;
+  s_vout_pid_filter = 0;
+  s_vout_pid_filter_valid = 0U;
 }
 
 
@@ -56,8 +62,18 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
 
     CtrValue.Vout_ref = CtrValue.Vout_SETref; // 输出参考电压设置为设置电压
 
-    int32_t VoutTemp = (ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B; // 获取矫正后的输出电压
+    int32_t VoutRaw = (ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B; // 获取矫正后的输出电压
     int32_t IoutTemp = (ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B; // 获取矫正后的输出电流
+    int32_t VoutTemp;
+
+    if (s_vout_pid_filter_valid == 0U || DF.PWMENFlag == 0U){
+        s_vout_pid_filter = VoutRaw;
+        s_vout_pid_filter_valid = 1U;
+    }
+    else{
+        s_vout_pid_filter += (VoutRaw - s_vout_pid_filter) >> VLOOP_ADC_FILTER_SHIFT;
+    }
+    VoutTemp = s_vout_pid_filter;
 
     // 输出电流采样为低于偏置代表正电流；低于参考码表示过流，需要降低电压参考。
     IErr0 = IoutTemp - CtrValue.Iout_ref;
@@ -136,6 +152,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         IErr0 = 0;
         IErr1 = 0;
         CVCC_Mode = CV;
+        s_vout_pid_filter = VoutRaw;
+        s_vout_pid_filter_valid = 1U;
         if (g_mode_switch_inject_valid != 0U){
             CtrValue.BuckDuty = g_mode_switch_buck_duty;
             CtrValue.BoostDuty = g_mode_switch_boost_duty;
