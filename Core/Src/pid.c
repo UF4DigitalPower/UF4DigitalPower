@@ -29,6 +29,47 @@ static CCRAM int32_t s_vout_pid_filter = 0;
 static CCRAM uint8_t s_vout_pid_filter_valid = 0U;
 
 #define VLOOP_ADC_FILTER_SHIFT 2U
+#define MIX_VLOOP_BOOST_DUTY_MAX_TICK ((int16_t)((BSP_POWER_BOOST_DUTY_MAX_TICK * 3U) / 4U))
+
+static inline int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick)
+{
+    return ((((int32_t)duty_tick + 2) / 3) << 8);
+}
+
+static inline int32_t s_VLoop_DutyMaxToLoopLimit(int16_t duty_tick)
+{
+    return (((int32_t)duty_tick / 3) << 8);
+}
+
+static inline void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max_duty)
+{
+    int32_t min_u = s_VLoop_DutyMinToLoopLimit(min_duty);
+    int32_t max_u = s_VLoop_DutyMaxToLoopLimit(max_duty);
+
+    if (max_u < min_u){
+        max_u = min_u;
+    }
+    if (u0 > max_u){
+        u0 = max_u;
+    }
+    if (u0 < min_u){
+        u0 = min_u;
+    }
+    u1 = u0;
+}
+
+static inline int16_t s_VLoop_GetMixBoostDutyMax(void)
+{
+    int16_t max_duty = MIX_VLOOP_BOOST_DUTY_MAX_TICK;
+
+    if (max_duty > CtrValue.BoostMaxDuty){
+        max_duty = CtrValue.BoostMaxDuty;
+    }
+    if (max_duty < BSP_POWER_BOOST_DUTY_MIN_TICK){
+        max_duty = BSP_POWER_BOOST_DUTY_MIN_TICK;
+    }
+    return max_duty;
+}
 
 /**
  * @brief 初始化 PID 环路相关状态量。
@@ -59,6 +100,8 @@ void PID_Init(void)
 RAMFUNC void BuckBoostVILoopCtlPID(void){
     static CCRAM int32_t I_Integral = 0; // 电流环路积分量
     static CCRAM int32_t i_vref_offset = 0; // 电流环累计拉低输出参考量
+    static CCRAM uint8_t i_limit_active = 0U;
+    static CCRAM uint16_t i_release_cnt = 0U;
 
     CtrValue.Vout_ref = CtrValue.Vout_SETref; // 输出参考电压设置为设置电压
 
@@ -75,13 +118,39 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     }
     VoutTemp = s_vout_pid_filter;
 
+    if (DF.PWMENFlag == 0U || DF.OUTPUT_Flag == 0U){
+        I_Integral = 0;
+        i_limit_active = 0U;
+        i_release_cnt = 0U;
+        i_vref_offset = 0;
+    }
+
     // 输出电流采样为低于偏置代表正电流；低于参考码表示过流，需要降低电压参考。
     IErr0 = IoutTemp - CtrValue.Iout_ref;
 
-    if (IoutTemp > (CtrValue.Iout_ref + ILOOP_RELEASE_MARGIN)){
+    if (IoutTemp <= (CtrValue.Iout_ref - ILOOP_ENTER_MARGIN)){
+        i_limit_active = 1U;
+        i_release_cnt = 0U;
+    }
+    else if (i_limit_active != 0U && IoutTemp >= (CtrValue.Iout_ref + ILOOP_RELEASE_MARGIN)){
+        if (i_release_cnt < ILOOP_RELEASE_HOLD_CYCLES){
+            i_release_cnt++;
+        }
+        else{
+            i_limit_active = 0U;
+            i_release_cnt = 0U;
+            I_Integral = 0;
+            i0 = 0;
+        }
+    }
+    else{
+        i_release_cnt = 0U;
+    }
+
+    if (i_limit_active == 0U){
+        IErr1 = IErr0;
         I_Integral = 0;
         i0 = 0;
-        IErr1 = IErr0;
         if (i_vref_offset > 0){
             i_vref_offset -= ILOOP_RELEASE_STEP;
             if (i_vref_offset < 0){
@@ -111,6 +180,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             i_vref_offset = 0;
         if (i_vref_offset > ILOOP_VREF_OFFSET_LIMIT)
             i_vref_offset = ILOOP_VREF_OFFSET_LIMIT;
+
+        IErr1 = IErr0;
     }
 
     if (DF.SMFlag == Rise && VoutTemp < CtrValue.Vout_ref / 2){ // 判断是否在软启动状态
@@ -147,6 +218,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         VErr2 = 0;
         VErr0 = 0;
         I_Integral = 0;
+        i_limit_active = 0U;
+        i_release_cnt = 0U;
         i_vref_offset = 0;
         i0 = 0;
         IErr0 = 0;
@@ -159,6 +232,10 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             CtrValue.BoostDuty = g_mode_switch_boost_duty;
             u0 = g_mode_switch_u_seed;
             u1 = g_mode_switch_u_seed;
+            if (DF.BBFlag == Mix){
+                s_VLoop_ClampOutputState(BSP_POWER_BOOST_DUTY_MIN_TICK, s_VLoop_GetMixBoostDutyMax());
+                CtrValue.BoostDuty = (u0 >> 8) * 3;
+            }
             g_mode_switch_inject_valid = 0U;
         }
         DF.BBModeChange = 0;
@@ -175,6 +252,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             i0 = 0;
             i_vref_offset = 0;
             I_Integral = 0;
+            i_limit_active = 0U;
+            i_release_cnt = 0U;
             IErr0 = 0;
             IErr1 = 0;
             break;
@@ -182,10 +261,10 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         case Buck:{ // BUCK模式
 
             u0 = u1 + VErr0 * BUCKPIDb0 + VErr1 * BUCKPIDb1 + VErr2 * BUCKPIDb2; // 计算电压环输出
+            s_VLoop_ClampOutputState(BSP_POWER_BUCK_DUTY_MIN_TICK, CtrValue.BUCKMaxDuty);
             // 历史数据幅值
             VErr2 = VErr1;
             VErr1 = VErr0;
-            u1 = u0;
 
             // 环路输出赋值
             CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK; // 参考示例工程，Buck模式下Boost支路保持同步整流安全占空
@@ -202,10 +281,10 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             int32_t boost_buck_target = BSP_POWER_BUCK_DUTY_MAX_TICK;
             // 调用PID环路计算公式（参照PID环路计算文档）
             u0 = u1 + VErr0 * BOOSTPIDb0 + VErr1 * BOOSTPIDb1 + VErr2 * BOOSTPIDb2;
+            s_VLoop_ClampOutputState(BSP_POWER_BOOST_DUTY_MIN_TICK, CtrValue.BoostMaxDuty);
             // 历史数据幅值
             VErr2 = VErr1;
             VErr1 = VErr0;
-            u1 = u0;
 
             // 环路输出赋值
             // BOOST 模式下不要一步把 Buck 支路硬切到 94%，否则进入 Boost 临界区时
@@ -241,12 +320,13 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         }
         case Mix:{ // Mix模式
             int32_t mix_buck_target = BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK;
+            int16_t mix_boost_max_duty = s_VLoop_GetMixBoostDutyMax();
             // 调用PID环路计算公式
-            u0 = u1 + VErr0 * BOOSTPIDb0 + VErr1 * BOOSTPIDb1 + VErr2 * BOOSTPIDb2;
+            u0 = u1 + VErr0 * MIXPIDb0 + VErr1 * MIXPIDb1 + VErr2 * MIXPIDb2;
+            s_VLoop_ClampOutputState(BSP_POWER_BOOST_DUTY_MIN_TICK, mix_boost_max_duty);
             // 历史数据幅值
             VErr2 = VErr1;
             VErr1 = VErr0;
-            u1 = u0;
             IErr1 = IErr0;
 
             // 环路输出赋值
@@ -275,8 +355,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             CtrValue.BoostDuty = (u0 >> 8) * 3; // 电压环占空比输出
 
             // 环路输出最大最小占空比限制
-            if (CtrValue.BoostDuty > CtrValue.BoostMaxDuty)
-                CtrValue.BoostDuty = CtrValue.BoostMaxDuty;
+            if (CtrValue.BoostDuty > mix_boost_max_duty)
+                CtrValue.BoostDuty = mix_boost_max_duty;
             if (CtrValue.BoostDuty < BSP_POWER_BOOST_DUTY_MIN_TICK)
                 CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
             break;

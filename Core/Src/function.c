@@ -89,7 +89,6 @@ volatile int32_t g_mode_switch_u_seed = 0;
 #define BB_MODE_MIX_TO_BOOST_RATIO      1.10F
 #define BB_MODE_BOOST_TO_MIX_RATIO      1.05F
 #define BB_MODE_VIN_DROP_FILTER_SHIFT   3U
-#define BB_MODE_MIX_BOOST_PRESET_STEP   BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK
 
 static int16_t s_PowerControl_ClampDutyTick(int32_t duty_tick, int16_t min_tick, int16_t max_tick)
 {
@@ -143,13 +142,11 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
             break;
 
         case Mix:
-            duty_ratio = vout_f / (vin_f + vout_f); // TI Eq.3: D = Vout / (Vin + Vout)
-            boost_duty = s_PowerControl_ClampDutyTick((int32_t)(duty_ratio * BSP_POWER_HRTIM_PERIOD_TICK + 0.5F),
+            // MIX 入口保持贴近当前硬件状态：Boost 支路和 u_seed 都从当前 BoostDuty 起步，
+            // 后续由 MIX 独立补偿器接管，避免 Buck/Boost/PID 三个状态互相不一致。
+            boost_duty = s_PowerControl_ClampDutyTick(CtrValue.BoostDuty,
                                                       BSP_POWER_BOOST_DUTY_MIN_TICK,
                                                       CtrValue.BoostMaxDuty);
-            if (boost_duty > CtrValue.BoostDuty + BB_MODE_MIX_BOOST_PRESET_STEP){
-                boost_duty = (int16_t)(CtrValue.BoostDuty + BB_MODE_MIX_BOOST_PRESET_STEP);
-            }
             buck_duty = CtrValue.BuckDuty;
             u_seed = s_PowerControl_DutyTickToLoopSeed(boost_duty);
             break;

@@ -27,14 +27,22 @@
 #define BOOSTPIDb1 -17413
 #define BOOSTPIDb2 8572
 
+// 环路的参数MIX输出-恒压-PID型补偿器
+// MIX 临界区功率级特性不同于纯 BOOST，先用较 BOOST 保守的初值，后续按实测单独整定。
+#define MIXPIDb0 6633
+#define MIXPIDb1 -13060
+#define MIXPIDb2 6429
+
 #define ILOOP_KP 2 // 电流环PID补偿器P值
 #define ILOOP_KI 1 // 电流环PID补偿器I值
 #define ILOOP_KD 0 // 电流环PID补偿器D值
-#define ILOOP_VREF_STEP_LIMIT 32 // 单次电流环调节输出参考的最大ADC码
+#define ILOOP_VREF_STEP_LIMIT 8 // 单次电流环调节输出参考的最大ADC码
 #define ILOOP_INTEGRAL_LIMIT 2048 // 电流环积分限幅，避免过流后深度积分啸叫
 #define ILOOP_VREF_OFFSET_LIMIT 2048 // 限流时允许累计拉低输出参考的最大ADC码
-#define ILOOP_RELEASE_STEP 8 // 退出限流时输出参考恢复步进
-#define ILOOP_RELEASE_MARGIN 8 // 低于限流点该ADC码数时释放电流环
+#define ILOOP_RELEASE_STEP 2 // 退出限流时输出参考恢复步进
+#define ILOOP_ENTER_MARGIN 4 // 高于限流点该ADC码数时进入电流环
+#define ILOOP_RELEASE_MARGIN 16 // 低于限流点该ADC码数时释放电流环
+#define ILOOP_RELEASE_HOLD_CYCLES 400U // 释放限流前保持周期，400周期@200kHz约2ms
 
 void PID_Init(void);
 void BuckBoostVILoopCtlPID(void);
