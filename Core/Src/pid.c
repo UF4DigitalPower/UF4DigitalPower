@@ -30,6 +30,7 @@ static CCRAM uint8_t s_vout_pid_filter_valid = 0U;
 
 #define VLOOP_ADC_FILTER_SHIFT 2U
 #define MIX_VLOOP_BOOST_DUTY_MAX_TICK ((int16_t)((BSP_POWER_BOOST_DUTY_MAX_TICK * 3U) / 4U))
+#define ADC_SAMPLE_TICK (BSP_POWER_HRTIM_PERIOD_TICK >> 1)
 
 static inline int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick)
 {
@@ -69,6 +70,11 @@ static inline int16_t s_VLoop_GetMixBoostDutyMax(void)
         max_duty = BSP_POWER_BOOST_DUTY_MIN_TICK;
     }
     return max_duty;
+}
+
+static inline uint32_t s_PowerControl_GetAdcSampleTick(void)
+{
+    return ADC_SAMPLE_TICK;
 }
 
 /**
@@ -184,7 +190,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         IErr1 = IErr0;
     }
 
-    if (DF.SMFlag == Rise && VoutTemp < CtrValue.Vout_ref / 2){ // 判断是否在软启动状态
+    if (DF.SMFlag == Rise){ // 判断是否在软启动状态
 
         CtrValue.Vout_ref = CtrValue.Vout_ref - i_vref_offset;  // 输出参考电压减去电流环限流偏移
         CVCC_Mode = (i_vref_offset > 0) ? CC : CV;              // 恒流模式
@@ -370,8 +376,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     // 更新对应寄存器
     // buck占空比
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK - CtrValue.BuckDuty);
-    // ADC触发采样点，buck占空比的一半，右移1位为除以2
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, __HAL_HRTIM_GETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1) >> 1);
+    // ADC触发采样点：固定在周期中点，避免 ADC 扫描延迟把 Vout 采样推到 PWM 边沿。
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, s_PowerControl_GetAdcSampleTick());
     // Boost占空比
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, CtrValue.BoostDuty);
 }

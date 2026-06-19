@@ -103,14 +103,14 @@
 #define MAX_SHORT_I 10.1F   // 短路电流判据
 #define MIN_SHORT_V 0.5F    // 短路电压判据
 
-#define CAL_VIN_K 4010  // 输入电压矫正K值
-#define CAL_VIN_B 32    // 输入电压矫正B值
+#define CAL_VIN_K 3985  // 输入电压矫正K值
+#define CAL_VIN_B 33    // 输入电压矫正B值
 
-#define CAL_VOUT_K 4132 // 输出电压矫正K值
-#define CAL_VOUT_B 9	// 输出电压矫正B值
+#define CAL_VOUT_K 4059 // 输出电压矫正K值
+#define CAL_VOUT_B 13	// 输出电压矫正B值
 
 #define CAL_IOUT_K 4095 // 输出电流矫正K值
-#define CAL_IOUT_B 10	// 输出电流矫正B值
+#define CAL_IOUT_B -7	// 输出电流矫正B值
 
 /***************故障类型*****************/
 

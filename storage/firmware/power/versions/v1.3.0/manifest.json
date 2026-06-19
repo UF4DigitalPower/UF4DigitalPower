@@ -11,14 +11,14 @@
     "bin": {
       "name": "F4CP-Power-v1.3.0.bin",
       "download_url": "/api/v1/firmware/power/versions/v1.3.0/download?type=bin",
-      "sha256": "eb4137fc1c229e7de7c0c2a2d12e0791b304206051b2796f6ccd52fac51af955",
-      "size": 56124
+      "sha256": "8b1abeabe91db6a76a2569383854f23e120bae1991d8f8f4973034d07585877d",
+      "size": 56148
     },
     "hex": {
       "name": "F4CP-Power-v1.3.0.hex",
       "download_url": "/api/v1/firmware/power/versions/v1.3.0/download?type=hex",
-      "sha256": "4aa83c3f3635e814282e49c2fff664688e0af4bb4a8dc6be8d49b936b6bac2c3",
-      "size": 157955
+      "sha256": "6840aa090c1a9695e608783c593a6947c3d8eb5702ce9252c4df67685f3d4cb5",
+      "size": 158016
     }
   },
   "burn": {
@@ -35,6 +35,9 @@
     "为 Mix 区加入独立补偿器初值、专用输出限幅与 anti-windup，避免沿用纯 Boost 状态",
     "为电压环采样加入轻量 IIR 滤波，并限制 u0/u1 内部状态，减少 ADC 抖动和隐藏积分跑飞",
     "优化电流环限流状态机，加入 CC/CV 滞回、释放保持时间和更温和的 Vref 拉低/释放步进",
+    "修正软启动流程，输出参考从 0 开始爬升并清零软启动占空计数器，降低启动输入电流过冲",
+    "调整 ADC1 采样时间为 24.5 cycles，并将 PWM 触发采样点固定在周期中点，降低开关噪声耦合",
+    "更新 VIN/VOUT/IOUT 校准参数，改善输入电压、输出电压与输出电流上报和闭环精度",
     "发布日期：2026-06-18"
   ]
 }

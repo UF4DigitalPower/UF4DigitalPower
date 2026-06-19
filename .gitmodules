@@ -1,0 +1,3 @@
+[submodule "UF4COM"]
+	path = UF4COM
+	url = https://github.com/UF4OVER/UF4COM.git

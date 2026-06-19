@@ -46,7 +46,7 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-set(UF4COM_ROOT "E:/PROJECT_C/UF4COM")
+set(UF4COM_ROOT "${CMAKE_SOURCE_DIR}/UF4COM")
 
 include_directories(
         Core/Inc

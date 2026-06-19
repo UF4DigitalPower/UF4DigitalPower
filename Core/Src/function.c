@@ -363,6 +363,8 @@ void StateMWait(void){
  */
 void StateMRise(void){
     static uint16_t Cnt = 0;     // 计时器
+    static uint16_t BUCKMaxDutyCnt = 0;
+    static uint16_t BoostMaxDutyCnt = 0;
     switch (STState){            // 判断软启状态
     case SSInit: {               // 初始化状态
         DF.PWMENFlag = 0;        // 关闭PWM
@@ -377,6 +379,10 @@ void StateMRise(void){
         VErr2 = 0;
         u0 = 0;
         u1 = 0;
+        Cnt = 0;
+        BUCKMaxDutyCnt = 0;
+        BoostMaxDutyCnt = 0;
+        CtrValue.Vout_SSref = 0;
 
         // 将设置值传到参考值
         CtrValue.Vout_SETref = (int32_t)((SET_Value.Vout / BSP_POWER_VOUT_SENSE_SCALE) / REF_3V3 * ADC_MAX_VALUE);
@@ -406,14 +412,13 @@ void StateMRise(void){
             VErr2 = 0;
             u0 = 0;
             u1 = 0;
-            CtrValue.Vout_SSref = CtrValue.Vout_SETref >> 1; // 输出参考电压从一半开始启动，避免过冲，然后缓慢上升
+            CtrValue.Vout_SSref = 0;                         // 输出参考电压从 0 开始软启动
             STState = SSRun;                                 // 跳转至软启状态
         }
         break;
     }
     // 软启动状态
     case SSRun:{
-        static uint16_t BUCKMaxDutyCnt = 0, BoostMaxDutyCnt = 0;
         if (DF.PWMENFlag == 0){// 正式发波前环路变量清0
             // 环路计算变量初始化
             VErr0 = 0;
@@ -427,6 +432,12 @@ void StateMRise(void){
             HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);           // 开启HRTIM的PWM输出
         } // 发波标志位置位
         DF.PWMENFlag = 1; // 最大占空比限制逐渐增加
+        if (CtrValue.Vout_SSref < CtrValue.Vout_SETref){
+            CtrValue.Vout_SSref += 4;
+            if (CtrValue.Vout_SSref > CtrValue.Vout_SETref){
+                CtrValue.Vout_SSref = CtrValue.Vout_SETref;
+            }
+        }
         BUCKMaxDutyCnt++;
         BoostMaxDutyCnt++; // 最大占空比限制累加
         CtrValue.BUCKMaxDuty = CtrValue.BUCKMaxDuty + BUCKMaxDutyCnt * 15;
