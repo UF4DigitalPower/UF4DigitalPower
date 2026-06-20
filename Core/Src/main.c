@@ -118,6 +118,7 @@ int main(void)
   MX_TIM16_Init();
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
+
   DF.SMFlag = Init;                         // 初始化状态机
 
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3); // 启动定时器8和通道3的PWM输出
@@ -152,7 +153,6 @@ int main(void)
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_D);              // 开启HRTIM波形计数器
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP); // 开启HRTIM定时器D的中断
 
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -162,15 +162,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (ms_cnt_4 >= 50)
-      {                      // 判断是否计时到50ms
+    if (ms_cnt_4 >= 50){     // 判断是否计时到50ms
       ms_cnt_4 = 0;          // 计时清零
       StatusLed_Update();    // 更新三色状态指示灯
 
-      if (ms_cnt_1 >= 500)
-        {                   // 判断是否计时到500ms
-        ms_cnt_1 = 0;       // 计时清零
-        Update_Flash();     // 更新Flash存储内容
+      if (ms_cnt_1 >= 500){  // 判断是否计时到500ms
+        ms_cnt_1 = 0;        // 计时清零
+        Update_Flash();      // 更新Flash存储内容
       }
     }
     UF4Transport_RunTask();  // 通信后台任务，处理挂起发送和原始数据流
