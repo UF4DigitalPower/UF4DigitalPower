@@ -1,8 +1,8 @@
 param(
     [string]$Kind = "power",
-    [string]$Version = "v0.1.0",
+    [string]$Version = "v1.4.0",
     [string]$Channel = "stable",
-    [string]$MinClient = "1.0.0",
+    [string]$MinClient = "1.1.0",
     [switch]$SkipSetLatest,
     [string]$ServerUser = "root",
     [string]$ServerHost = "38.76.214.157",
