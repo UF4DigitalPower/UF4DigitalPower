@@ -13,19 +13,32 @@
 #include "tim.h"
 #include "uf4com.h"
 #include "uf4com_id_table.h"
+#include "uf4com_parser.h"
 #include "usart.h"
 #include "usbd_cdc_if.h"
 
 #define UF4_TRANSPORT_CHANNEL_COUNT 3U
 #define UF4_TRANSPORT_STREAM_PERIOD_MS 20U
-#define UF4_TRANSPORT_UART1_CDC_MIRROR 1U
+#define UF4_TRANSPORT_UART1_CDC_TRACE 0U
+#define UF4_TRANSPORT_CDC_TRACE_BUFFER_SIZE 2048U
+#define UF4_TRANSPORT_CDC_TRACE_TX_CHUNK_SIZE 512U
+#define UF4_TRANSPORT_TX_QUEUE_DEPTH 4U
+#define UF4_TRANSPORT_HOST_REQUEST_STREAM_PAUSE_MS 80U
+
+typedef struct
+{
+    uint8_t data[UF4_TRANSPORT_MAX_FRAME_SIZE];
+    uint16_t len;
+} UF4Transport_TxQueueItem;
 
 typedef struct
 {
     UF4Transport_Port port;
     uint8_t tx_buffer[UF4_TRANSPORT_MAX_FRAME_SIZE];
-    uint8_t pending_buffer[UF4_TRANSPORT_MAX_FRAME_SIZE];
-    uint16_t pending_len;
+    UF4Transport_TxQueueItem pending_queue[UF4_TRANSPORT_TX_QUEUE_DEPTH];
+    uint8_t pending_head;
+    uint8_t pending_tail;
+    uint8_t pending_count;
     uint8_t tx_busy;
 } UF4Transport_ChannelContext;
 
@@ -37,13 +50,24 @@ typedef struct
     uint16_t uart1_rx_last_pos;
     uint16_t uart2_rx_last_pos;
     uint8_t fan_manual_enable;
+    uint8_t stream_start_rsp_pending;
     uint16_t fan_set_permille;
     uint32_t last_fan_apply_tick;
     uint32_t last_stream_tick;
+    uint32_t stream_pause_until_tick;
     UF4Transport_ChannelContext channels[UF4_TRANSPORT_CHANNEL_COUNT];
 } UF4Transport_Context;
 
 static UF4Transport_Context s_uf4_transport;
+static volatile uint8_t s_uf4_transport_initialized;
+static volatile uint8_t s_uf4_transport_task_running;
+static volatile uint8_t s_uf4_transport_stream_tick_pending;
+static uint8_t s_uf4_transport_cdc_trace_buffer[UF4_TRANSPORT_CDC_TRACE_BUFFER_SIZE];
+static uint8_t s_uf4_transport_cdc_trace_tx_buffer[UF4_TRANSPORT_CDC_TRACE_TX_CHUNK_SIZE];
+static volatile uint16_t s_uf4_transport_cdc_trace_head;
+static volatile uint16_t s_uf4_transport_cdc_trace_tail;
+static volatile uint8_t s_uf4_transport_cdc_trace_busy;
+static uf4_parser_t s_uf4_transport_cdc_trace_rx_parser;
 
 static uint16_t s_id_input_voltage;
 static uint16_t s_id_input_current;
@@ -77,6 +101,16 @@ static uint16_t s_id_fan_set_value;
 static uint16_t s_id_loop_current_feedback;
 static uint16_t s_id_loop_current_reference;
 static uint16_t s_id_voltage_loop_current_reference;
+
+static void s_UF4Transport_CdcTraceBytes(const char *prefix, const uint8_t *data, uint16_t len);
+static void s_UF4Transport_CdcTraceUartRx(UF4Transport_Port port, const uint8_t *data, uint16_t len);
+static void s_UF4Transport_CdcTraceTask(void);
+static void s_UF4Transport_PollTxCompletion(UF4Transport_ChannelContext *channel);
+static void s_UF4Transport_FlushPending(UF4Transport_ChannelContext *channel);
+static uint8_t s_UF4Transport_IsStreamStartRsp(const uint8_t *data, uint16_t len);
+static void s_UF4Transport_ClearStreamStartRspPendingIfIdle(UF4Transport_ChannelContext *channel);
+static void s_UF4Transport_PauseStreamForHostRequest(void);
+static uint8_t s_UF4Transport_IsStreamPausedForHostRequest(void);
 
 static uf4_id_t s_uf4_id_table[] =
 {
@@ -407,37 +441,59 @@ static HAL_StatusTypeDef s_UF4Transport_SendOnChannel(UF4Transport_ChannelContex
     switch(channel->port)
     {
         case UF4_TRANSPORT_PORT_USART1:
+            channel->tx_busy = 1U;
             if(HAL_UART_Transmit_DMA(&huart1, channel->tx_buffer, len) != HAL_OK)
             {
+                channel->tx_busy = 0U;
                 return HAL_BUSY;
             }
-            channel->tx_busy = 1U;
+            s_UF4Transport_CdcTraceBytes("[LOW->UP FRAME] ", channel->tx_buffer, len);
             return HAL_OK;
 
         case UF4_TRANSPORT_PORT_USART2:
+            channel->tx_busy = 1U;
             if(HAL_UART_Transmit_DMA(&huart2, channel->tx_buffer, len) != HAL_OK)
             {
+                channel->tx_busy = 0U;
                 return HAL_BUSY;
             }
-            channel->tx_busy = 1U;
             return HAL_OK;
 
         case UF4_TRANSPORT_PORT_CDC:
         default:
+            channel->tx_busy = 1U;
             if(CDC_Transmit_FS(channel->tx_buffer, len) != USBD_OK)
             {
+                channel->tx_busy = 0U;
                 return HAL_BUSY;
             }
-            channel->tx_busy = 1U;
             return HAL_OK;
     }
 }
 
+static uint8_t s_UF4Transport_IsStreamStartRsp(const uint8_t *data, uint16_t len)
+{
+    return (uint8_t)((data != NULL) &&
+                     (len >= 8U) &&
+                     (data[0] == UF4_SOF1) &&
+                     (data[1] == UF4_SOF2) &&
+                     (data[4] == UF4_CMD_STREAM_START_RSP));
+}
+
 static HAL_StatusTypeDef s_UF4Transport_QueueBytes(UF4Transport_ChannelContext *channel, const uint8_t *data, uint16_t len)
 {
+    UF4Transport_TxQueueItem *item;
+    uint8_t is_stream_start_rsp;
+
     if((channel == NULL) || (data == NULL) || (len == 0U) || (len > UF4_TRANSPORT_MAX_FRAME_SIZE))
     {
         return HAL_ERROR;
+    }
+
+    is_stream_start_rsp = s_UF4Transport_IsStreamStartRsp(data, len);
+    if(is_stream_start_rsp != 0U)
+    {
+        s_uf4_transport.stream_start_rsp_pending = 1U;
     }
 
     if(s_UF4Transport_SendOnChannel(channel, data, len) == HAL_OK)
@@ -445,22 +501,84 @@ static HAL_StatusTypeDef s_UF4Transport_QueueBytes(UF4Transport_ChannelContext *
         return HAL_OK;
     }
 
-    memcpy(channel->pending_buffer, data, len);
-    channel->pending_len = len;
+    if(channel->pending_count >= UF4_TRANSPORT_TX_QUEUE_DEPTH)
+    {
+        if(is_stream_start_rsp != 0U)
+        {
+            s_uf4_transport.stream_start_rsp_pending = 0U;
+        }
+        return HAL_BUSY;
+    }
+
+    item = &channel->pending_queue[channel->pending_tail];
+    memcpy(item->data, data, len);
+    item->len = len;
+    channel->pending_tail++;
+    if(channel->pending_tail >= UF4_TRANSPORT_TX_QUEUE_DEPTH)
+    {
+        channel->pending_tail = 0U;
+    }
+    channel->pending_count++;
     return HAL_OK;
+}
+
+static uint8_t s_UF4Transport_ChannelCanStartFrame(UF4Transport_ChannelContext *channel)
+{
+    if(channel == NULL)
+    {
+        return 0U;
+    }
+
+    s_UF4Transport_PollTxCompletion(channel);
+    s_UF4Transport_FlushPending(channel);
+    return (uint8_t)((channel->tx_busy == 0U) && (channel->pending_count == 0U));
 }
 
 static void s_UF4Transport_FlushPending(UF4Transport_ChannelContext *channel)
 {
-    if((channel == NULL) || (channel->pending_len == 0U))
+    UF4Transport_TxQueueItem *item;
+
+    if((channel == NULL) || (channel->pending_count == 0U))
     {
         return;
     }
 
-    if(s_UF4Transport_SendOnChannel(channel, channel->pending_buffer, channel->pending_len) == HAL_OK)
+    item = &channel->pending_queue[channel->pending_head];
+    if(s_UF4Transport_SendOnChannel(channel, item->data, item->len) == HAL_OK)
     {
-        channel->pending_len = 0U;
+        item->len = 0U;
+        channel->pending_head++;
+        if(channel->pending_head >= UF4_TRANSPORT_TX_QUEUE_DEPTH)
+        {
+            channel->pending_head = 0U;
+        }
+        channel->pending_count--;
     }
+}
+
+static void s_UF4Transport_ClearStreamStartRspPendingIfIdle(UF4Transport_ChannelContext *channel)
+{
+    if((channel == NULL) ||
+       (s_uf4_transport.stream_start_rsp_pending == 0U) ||
+       (channel->port != s_uf4_transport.selected_port) ||
+       (channel->tx_busy != 0U) ||
+       (channel->pending_count != 0U))
+    {
+        return;
+    }
+
+    s_uf4_transport.stream_start_rsp_pending = 0U;
+}
+
+static void s_UF4Transport_PauseStreamForHostRequest(void)
+{
+    s_uf4_transport.stream_pause_until_tick =
+        HAL_GetTick() + UF4_TRANSPORT_HOST_REQUEST_STREAM_PAUSE_MS;
+}
+
+static uint8_t s_UF4Transport_IsStreamPausedForHostRequest(void)
+{
+    return (uint8_t)((int32_t)(s_uf4_transport.stream_pause_until_tick - HAL_GetTick()) > 0);
 }
 
 static uint8_t s_UF4Transport_CdcTxIdle(void)
@@ -475,6 +593,162 @@ static uint8_t s_UF4Transport_CdcTxIdle(void)
 
     hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
     return (uint8_t)(hcdc->TxState == 0U);
+}
+
+static uint16_t s_UF4Transport_CdcTraceNextPos(uint16_t pos)
+{
+    ++pos;
+    if(pos >= UF4_TRANSPORT_CDC_TRACE_BUFFER_SIZE)
+    {
+        pos = 0U;
+    }
+    return pos;
+}
+
+static void s_UF4Transport_CdcTracePushByte(uint8_t value)
+{
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    uint16_t next_head = s_UF4Transport_CdcTraceNextPos(s_uf4_transport_cdc_trace_head);
+
+    if(next_head == s_uf4_transport_cdc_trace_tail)
+    {
+        s_uf4_transport_cdc_trace_tail = s_UF4Transport_CdcTraceNextPos(s_uf4_transport_cdc_trace_tail);
+    }
+
+    s_uf4_transport_cdc_trace_buffer[s_uf4_transport_cdc_trace_head] = value;
+    s_uf4_transport_cdc_trace_head = next_head;
+#else
+    (void)value;
+#endif
+}
+
+static void s_UF4Transport_CdcTracePushText(const char *text)
+{
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    if(text == NULL)
+    {
+        return;
+    }
+
+    while(*text != '\0')
+    {
+        s_UF4Transport_CdcTracePushByte((uint8_t)*text);
+        ++text;
+    }
+#else
+    (void)text;
+#endif
+}
+
+static void s_UF4Transport_CdcTracePushHexByte(uint8_t value)
+{
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    static const char hex[] = "0123456789ABCDEF";
+
+    s_UF4Transport_CdcTracePushByte((uint8_t)hex[(value >> 4U) & 0x0FU]);
+    s_UF4Transport_CdcTracePushByte((uint8_t)hex[value & 0x0FU]);
+#else
+    (void)value;
+#endif
+}
+
+static void s_UF4Transport_CdcTraceBytes(const char *prefix, const uint8_t *data, uint16_t len)
+{
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    if((data == NULL) || (len == 0U))
+    {
+        return;
+    }
+
+    s_UF4Transport_CdcTracePushText(prefix);
+    for(uint16_t i = 0U; i < len; ++i)
+    {
+        s_UF4Transport_CdcTracePushHexByte(data[i]);
+        if((i + 1U) < len)
+        {
+            s_UF4Transport_CdcTracePushByte((uint8_t)' ');
+        }
+    }
+    s_UF4Transport_CdcTracePushText("\r\n");
+#else
+    (void)prefix;
+    (void)data;
+    (void)len;
+#endif
+}
+
+static uint16_t s_UF4Transport_CdcTraceBuildFrameBytes(const uf4_frame_t *frame, uint8_t *out, uint16_t out_size)
+{
+    if(frame == NULL)
+    {
+        return 0U;
+    }
+
+    return UF4_BuildFrame(
+        frame->seq,
+        frame->flags,
+        frame->cmd,
+        frame->data,
+        frame->len,
+        out,
+        out_size);
+}
+
+static void s_UF4Transport_CdcTraceUartRx(UF4Transport_Port port, const uint8_t *data, uint16_t len)
+{
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    uf4_frame_t frame;
+    uint8_t frame_bytes[UF4_MAX_FRAME_LEN];
+    uint16_t frame_len;
+
+    if((port != UF4_TRANSPORT_PORT_USART1) || (data == NULL) || (len == 0U))
+    {
+        return;
+    }
+
+    for(uint16_t i = 0U; i < len; ++i)
+    {
+        if(UF4_ParserInput(&s_uf4_transport_cdc_trace_rx_parser, data[i], &frame) != 0U)
+        {
+            frame_len = s_UF4Transport_CdcTraceBuildFrameBytes(&frame, frame_bytes, sizeof(frame_bytes));
+            s_UF4Transport_CdcTraceBytes("[UP->LOW FRAME] ", frame_bytes, frame_len);
+        }
+    }
+#else
+    (void)port;
+    (void)data;
+    (void)len;
+#endif
+}
+
+static void s_UF4Transport_CdcTraceTask(void)
+{
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    uint16_t len = 0U;
+
+    if((s_uf4_transport_cdc_trace_busy != 0U) || (s_UF4Transport_CdcTxIdle() == 0U))
+    {
+        return;
+    }
+
+    while((s_uf4_transport_cdc_trace_tail != s_uf4_transport_cdc_trace_head) &&
+          (len < UF4_TRANSPORT_CDC_TRACE_TX_CHUNK_SIZE))
+    {
+        s_uf4_transport_cdc_trace_tx_buffer[len++] =
+            s_uf4_transport_cdc_trace_buffer[s_uf4_transport_cdc_trace_tail];
+        s_uf4_transport_cdc_trace_tail = s_UF4Transport_CdcTraceNextPos(s_uf4_transport_cdc_trace_tail);
+    }
+
+    if(len == 0U)
+    {
+        return;
+    }
+
+    if(CDC_Transmit_FS(s_uf4_transport_cdc_trace_tx_buffer, len) == USBD_OK)
+    {
+        s_uf4_transport_cdc_trace_busy = 1U;
+    }
+#endif
 }
 
 static void s_UF4Transport_PollTxCompletion(UF4Transport_ChannelContext *channel)
@@ -498,6 +772,8 @@ static void s_UF4Transport_PollTxCompletion(UF4Transport_ChannelContext *channel
            这里直接查询 USB CDC 的真实 TxState 作为兜底，避免 tx_busy 永久卡死。 */
         channel->tx_busy = 0U;
     }
+
+    s_UF4Transport_ClearStreamStartRspPendingIfIdle(channel);
 }
 
 static void s_UF4Transport_Uf4Tx(const uint8_t *data, uint16_t len, void *user)
@@ -515,11 +791,8 @@ static void s_UF4Transport_Uf4WriteApply(void *user)
 
 static void s_UF4Transport_MirrorUartRxToCdc(UF4Transport_Port port, const uint8_t *data, uint16_t len)
 {
-#if UF4_TRANSPORT_UART1_CDC_MIRROR
-    if((port == UF4_TRANSPORT_PORT_USART1) && (data != NULL) && (len > 0U) && (s_UF4Transport_CdcTxIdle() != 0U))
-    {
-        (void)CDC_Transmit_FS((uint8_t *)data, len);
-    }
+#if UF4_TRANSPORT_UART1_CDC_TRACE
+    s_UF4Transport_CdcTraceUartRx(port, data, len);
 #else
     (void)port;
     (void)data;
@@ -536,11 +809,13 @@ static void s_UF4Transport_ProcessUartRxWindow(UF4Transport_Port port, uint8_t *
 
     if(current_pos > *last_pos)
     {
+        s_UF4Transport_PauseStreamForHostRequest();
         s_UF4Transport_MirrorUartRxToCdc(port, &buffer[*last_pos], (uint16_t)(current_pos - *last_pos));
         (void)UF4_InputBuffer(&buffer[*last_pos], (uint16_t)(current_pos - *last_pos));
     }
     else if(current_pos < *last_pos)
     {
+        s_UF4Transport_PauseStreamForHostRequest();
         s_UF4Transport_MirrorUartRxToCdc(port, &buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
         (void)UF4_InputBuffer(&buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
         if(current_pos > 0U)
@@ -551,6 +826,7 @@ static void s_UF4Transport_ProcessUartRxWindow(UF4Transport_Port port, uint8_t *
     }
     else if(current_pos == UF4_TRANSPORT_UART_RX_DMA_SIZE)
     {
+        s_UF4Transport_PauseStreamForHostRequest();
         s_UF4Transport_MirrorUartRxToCdc(port, &buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
         (void)UF4_InputBuffer(&buffer[*last_pos], (uint16_t)(UF4_TRANSPORT_UART_RX_DMA_SIZE - *last_pos));
     }
@@ -611,6 +887,7 @@ void UF4Transport_Init(void)
     UF4_IDTableBind(s_uf4_id_table, sizeof(s_uf4_id_table) / sizeof(s_uf4_id_table[0]));
     UF4_Init(s_UF4Transport_Uf4Tx, NULL);
     UF4_SetWriteApplyCallback(s_UF4Transport_Uf4WriteApply, NULL);
+    UF4_ParserInit(&s_uf4_transport_cdc_trace_rx_parser);
 
     if(s_UF4Transport_IsPortEnabled(UF4_TRANSPORT_PORT_USART1) != 0U)
     {
@@ -620,6 +897,8 @@ void UF4Transport_Init(void)
     {
         s_UF4Transport_StartUartRxDma(&huart2, s_uf4_transport.uart2_rx_buffer);
     }
+
+    s_uf4_transport_initialized = 1U;
 }
 
 /**
@@ -631,8 +910,19 @@ void UF4Transport_RunTask(void)
     uint32_t i;
     const uint32_t tick_now = HAL_GetTick();
 
+    if(s_uf4_transport_initialized == 0U)
+    {
+        return;
+    }
+    if(s_uf4_transport_task_running != 0U)
+    {
+        return;
+    }
+    s_uf4_transport_task_running = 1U;
+
     s_UF4Transport_UpdateReadRegisters();
     s_UF4Transport_PollUartRx();
+    s_UF4Transport_CdcTraceTask();
 
     if((s_uf4_transport.fan_manual_enable != 0U) && ((tick_now - s_uf4_transport.last_fan_apply_tick) >= 50U))
     {
@@ -640,8 +930,7 @@ void UF4Transport_RunTask(void)
         s_uf4_transport.last_fan_apply_tick = tick_now;
     }
 
-    /* 流发送（poll TX / flush pending / UF4_Process）已移到 UF4Transport_StreamTick，
-       由 TIM7 中断每 20ms 调用，避免输出开启后主循环被 HRTIM PID 中断饿死。 */
+    /* 普通 TX 收尾仍在主循环推进，避免在中断中启动 UART DMA。 */
     for(i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
     {
         if(s_UF4Transport_IsPortEnabled(s_uf4_transport.channels[i].port) != 0U)
@@ -650,6 +939,23 @@ void UF4Transport_RunTask(void)
             s_UF4Transport_FlushPending(&s_uf4_transport.channels[i]);
         }
     }
+
+    if(s_uf4_transport_stream_tick_pending != 0U)
+    {
+        s_uf4_transport_stream_tick_pending = 0U;
+        UF4Transport_StreamTick();
+    }
+    s_UF4Transport_CdcTraceTask();
+    s_uf4_transport_task_running = 0U;
+}
+
+/**
+ * @brief 请求执行一次 UF4 周期流发送节拍。
+ * 可在定时器中断中调用；实际协议处理和 UART DMA 发送在主循环执行。
+ */
+void UF4Transport_RequestStreamTick(void)
+{
+    s_uf4_transport_stream_tick_pending = 1U;
 }
 
 /**
@@ -659,6 +965,7 @@ void UF4Transport_RunTask(void)
 void UF4Transport_StreamTick(void)
 {
     uint32_t i;
+    UF4Transport_ChannelContext *selected_channel;
 
     /* 刷新读寄存器（流数据来源） */
     s_UF4Transport_UpdateReadRegisters();
@@ -673,7 +980,22 @@ void UF4Transport_StreamTick(void)
         }
     }
 
+    selected_channel = s_UF4Transport_GetChannel(s_uf4_transport.selected_port);
+    if(s_UF4Transport_ChannelCanStartFrame(selected_channel) == 0U)
+    {
+        return;
+    }
+    if(s_uf4_transport.stream_start_rsp_pending != 0U)
+    {
+        return;
+    }
+    if(s_UF4Transport_IsStreamPausedForHostRequest() != 0U)
+    {
+        return;
+    }
+
     UF4_Process();
+    s_UF4Transport_CdcTraceTask();
 }
 
 /**
@@ -718,6 +1040,7 @@ void UF4Transport_OnUsbCdcRx(const uint8_t *data, uint16_t len)
     }
 
     s_uf4_transport.selected_port = UF4_TRANSPORT_PORT_CDC;
+    s_UF4Transport_PauseStreamForHostRequest();
     s_UF4Transport_UpdateReadRegisters();
     (void)UF4_InputBuffer(data, len);
     s_UF4Transport_UpdateReadRegisters();
@@ -743,7 +1066,16 @@ void UF4Transport_OnTxComplete(UF4Transport_Port port)
     if(channel != NULL)
     {
         channel->tx_busy = 0U;
+        if((port == s_uf4_transport.selected_port) && (channel->pending_count == 0U))
+        {
+            s_uf4_transport.stream_start_rsp_pending = 0U;
+        }
     }
+}
+
+void UF4Transport_OnCdcTraceTxComplete(void)
+{
+    s_uf4_transport_cdc_trace_busy = 0U;
 }
 
 /**

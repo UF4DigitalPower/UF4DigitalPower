@@ -56,12 +56,30 @@
  * @param alpha 滤波系数
  * @return 滤波后的输出信号
  */
-static float one_order_lowpass_filter(float input, float alpha)
+static float one_order_lowpass_filter(float input, float alpha, float *prev_output)
 {
-    static float prev_output = 0.0F;                             // 静态变量，用于保存上一次的输出值
-    const float output = alpha * input + (1.0F - alpha) * prev_output; // 一阶低通滤波算法
-    prev_output = output;                                        // 保存本次输出值，以备下一次使用
+    const float output = alpha * input + (1.0F - alpha) * (*prev_output); // 一阶低通滤波算法
+    *prev_output = output;                                       // 保存本次输出值，以备下一次使用
     return output;                                               // 返回滤波后的输出信号
+}
+
+static uint8_t s_TEMP_ReadSingleConversion(ADC_HandleTypeDef *hadc, uint32_t *adc_value)
+{
+    if ((hadc == NULL) || (adc_value == NULL)) {
+        return 0U;
+    }
+
+    if (HAL_ADC_Start(hadc) != HAL_OK) {
+        return 0U;
+    }
+    if (HAL_ADC_PollForConversion(hadc, 2U) != HAL_OK) {
+        (void)HAL_ADC_Stop(hadc);
+        return 0U;
+    }
+
+    *adc_value = HAL_ADC_GetValue(hadc);
+    (void)HAL_ADC_Stop(hadc);
+    return 1U;
 }
 
 /**
@@ -71,7 +89,7 @@ static float one_order_lowpass_filter(float input, float alpha)
  * @param adc_value ADC读数 (0-4095 对应 0-3.3V)
  * @return 温度值(°C)
  */
-float BSP_tempAdcToTemperature(uint32_t adc_value)
+static float s_TEMP_NtcAdcToTemperature(uint32_t adc_value, float *filter_state)
 {
     if (adc_value >= 4095U) {
         return -40.0F;
@@ -91,14 +109,26 @@ float BSP_tempAdcToTemperature(uint32_t adc_value)
         temperature = 120.0F;
     }
 
-    return one_order_lowpass_filter(temperature,0.1F);
+    return one_order_lowpass_filter(temperature, 0.1F, filter_state);
+}
+
+float BSP_tempAdcToTemperature(uint32_t adc_value)
+{
+    static float s_ntc_filter_state = 25.0F;
+
+    return s_TEMP_NtcAdcToTemperature(adc_value, &s_ntc_filter_state);
 }
 
 float GET_NTC1_Temperature(void) {
-    HAL_ADC_Start(&hadc2); // 启动ADC2采样，采样NTC温度
-    // HAL_ADC_PollForConversion(&hadc2, 100); // 等待ADC采样结束
-    const uint32_t TEMP_adcValue = HAL_ADC_GetValue(&hadc2);   // 读取ADC2采样结果
-    return BSP_tempAdcToTemperature(TEMP_adcValue);
+    static float s_ntc1_filter_state = 25.0F;
+    static float s_ntc1_last_temperature = 25.0F;
+    uint32_t TEMP_adcValue;
+
+    if (s_TEMP_ReadSingleConversion(&hadc2, &TEMP_adcValue) == 0U) {
+        return s_ntc1_last_temperature;
+    }
+    s_ntc1_last_temperature = s_TEMP_NtcAdcToTemperature(TEMP_adcValue, &s_ntc1_filter_state);
+    return s_ntc1_last_temperature;
 };
 
 /**
@@ -107,10 +137,15 @@ float GET_NTC1_Temperature(void) {
  */
 float GET_NTC2_Temperature(void)
 {
-    HAL_ADC_Start(&hadc3); // 启动ADC2采样，采样NTC温度
-    // HAL_ADC_PollForConversion(&hadc2, 100); // 等待ADC采样结束
-    const uint32_t TEMP_adcValue = HAL_ADC_GetValue(&hadc3);   // 读取ADC2采样结果
-    return BSP_tempAdcToTemperature(TEMP_adcValue);
+    static float s_ntc2_filter_state = 25.0F;
+    static float s_ntc2_last_temperature = 25.0F;
+    uint32_t TEMP_adcValue;
+
+    if (s_TEMP_ReadSingleConversion(&hadc3, &TEMP_adcValue) == 0U) {
+        return s_ntc2_last_temperature;
+    }
+    s_ntc2_last_temperature = s_TEMP_NtcAdcToTemperature(TEMP_adcValue, &s_ntc2_filter_state);
+    return s_ntc2_last_temperature;
 };
 
 /**
@@ -119,11 +154,16 @@ float GET_NTC2_Temperature(void)
  */
 float GET_CPU_Temperature(void)
 {
-    HAL_ADC_Start(&hadc5); // 启动ADC5采样，采样单片机CPU温度
-    // HAL_ADC_PollForConversion(&hadc5, 100); // 等待ADC采样结束
+    static float s_cpu_filter_state = 25.0F;
+    static float s_cpu_last_temperature = 25.0F;
+    uint32_t adc_value;
+    if (s_TEMP_ReadSingleConversion(&hadc5, &adc_value) == 0U) {
+        return s_cpu_last_temperature;
+    }
     const float Temp_Scale = (TS_CAL2_TEMP - TS_CAL1_TEMP) / (float)(TS_CAL2 - TS_CAL1); // 计算温度比例因子
-    const float temperature = Temp_Scale * (HAL_ADC_GetValue(&hadc5) * (NTC_VREF / 3.0F) - TS_CAL1) + TS_CAL1_TEMP; // 计算温度
-    return one_order_lowpass_filter(temperature, 0.1F); // 返回温度值
+    const float temperature = Temp_Scale * ((float)adc_value * (NTC_VREF / 3.0F) - TS_CAL1) + TS_CAL1_TEMP; // 计算温度
+    s_cpu_last_temperature = one_order_lowpass_filter(temperature, 0.1F, &s_cpu_filter_state);
+    return s_cpu_last_temperature; // 返回温度值
 };
 /* USER CODE END 0 */
 

@@ -331,6 +331,7 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Len);
   UNUSED(epnum);
   UF4Transport_OnTxComplete(UF4_TRANSPORT_PORT_CDC);
+  UF4Transport_OnCdcTraceTxComplete();
   /* USER CODE END 13 */
   return result;
 }

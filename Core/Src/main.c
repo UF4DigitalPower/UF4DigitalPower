@@ -142,13 +142,10 @@ int main(void)
 
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED); // 校准ADC1
   HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED); // 校准ADC2
+  HAL_ADCEx_Calibration_Start(&hadc3, ADC_SINGLE_ENDED); // 校准ADC3
   HAL_ADCEx_Calibration_Start(&hadc5, ADC_SINGLE_ENDED); // 校准ADC5
 
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)(void *)ADC1_RESULT, 4); // 启动ADC1采样和DMA数据传送,采样输入输出电压电流
-  HAL_ADC_Start(&hadc2);                                 // 启动ADC2采样，采样NTC1温度
-  HAL_ADC_Start(&hadc3);                                 // 启动ADC3采样，采样NTC2温度
-  HAL_ADC_Start(&hadc5);                                 // 启动ADC5采样，采样单片机CPU温度
-
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_A);              // 开启HRTIM波形计数器
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_D);              // 开启HRTIM波形计数器
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP); // 开启HRTIM定时器D的中断
@@ -255,14 +252,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     OCP();       // 输出过流保护
     StateM();    // 电源状态机函数
     BBMode();    // 运行模式判断
-    // 流发送放在 TIM7 中断里（每 4 次 = 20ms），避免输出开启后主循环被
-    // HRTIM PID 中断饿死导致 STREAM_DATA 断流。
+    // 通信后台也在 TIM7 里跑一份，避免输出开启后主循环被快环或 Flash 写入拖住。
+    // UF4Transport 内部有初始化和重入保护，TIM7 这里只负责固定节拍驱动。
+    UF4Transport_RunTask();
     {
       static uint8_t stream_div = 0;
       stream_div++;
       if (stream_div >= 4U) {
         stream_div = 0U;
-        UF4Transport_StreamTick();
+        UF4Transport_RequestStreamTick();
       }
     }
   }
