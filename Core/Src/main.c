@@ -118,7 +118,7 @@ int main(void)
   MX_TIM16_Init();
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
-
+  // V1.4.0
   DF.SMFlag = Init;                         // 初始化状态机
 
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_3); // 启动定时器8和通道3的PWM输出
