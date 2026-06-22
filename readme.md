@@ -586,5 +586,6 @@ UF4DigitalPower/
 ```powershell
 git clone https://github.com/UF4OVER/UF4DigitalPower_Firmware
 cd UF4DigitalPower_Firmware
+git submodule update --init
 cmake --build cmake-build-debug -- -j4
 ```
