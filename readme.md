@@ -1,5 +1,13 @@
 # UF4DigitalPower 下位机固件说明
 
+硬件上位机链接: [UF4UpperPower](https://github.com/UF4DigitalPower/UF4UpperPower)<br>
+PC上位机链接: [F4CP](https://github.com/UF4DigitalPower/F4CP)<br>
+立创开源硬件：[数字电源](https://oshwhub.com/uf4over/shu-zi-dian-yuan)<br>
+
+觉得不错的话点个star吧
+
+qq交流群 ： 871340927
+
 本仓库是 UF4 数字电源的下位机固件工程，面向基于 `STM32G474CBT6` 的四开关同步整流 Buck-Boost 数字电源控制板。
 
 固件负责 ADC 采样、PWM 调制、Buck/Mix/Boost 模式切换、电压电流闭环、保护逻辑、USB CDC 通信、DAPLink 辅助烧录和固件版本发布。
