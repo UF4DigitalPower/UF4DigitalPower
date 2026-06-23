@@ -23,6 +23,7 @@
 #include "hrtim.h"
 #include "W25Q64.h"
 #include "temp.h"
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -31,6 +32,11 @@ volatile uint16_t ADC1_RESULT[4] = {0, 0, 0, 0};                   // ADC采样�
 volatile float MAX_OTP_VAL;                                        // 过温保护阈值
 volatile float MAX_VOUT_OVP_VAL;                                   // 输出过压保护阈值
 volatile float MAX_VOUT_OCP_VAL;                                   // 输出过流保护阈值
+
+static float VinFilt = 0.0f;                                       // 静态变量保存历史值
+static float VoutFilt = 0.0f;
+static float IinFilt = 0.0f;
+static float IoutFilt = 0.0f;
 
 struct _Ctr_value CtrValue =
     {
@@ -106,6 +112,34 @@ static int32_t s_PowerControl_DutyTickToLoopSeed(int16_t duty_tick)
     return (((int32_t)duty_tick / 3) << 8);
 }
 
+__STATIC_FORCEINLINE float DynamicIIR(float raw, float *filt)
+{
+    float err = fabsf(raw - *filt);
+
+    float alpha;
+
+    if (err > 2.0f)
+    {
+        alpha = 0.70f;
+    }
+    else if (err > 0.5f)
+    {
+        alpha = 0.30f;
+    }
+    else if (err > 0.1f)
+    {
+        alpha = 0.10f;
+    }
+    else
+    {
+        alpha = 0.03f;
+    }
+
+    *filt += alpha * (raw - *filt);
+
+    return *filt;
+}
+
 /**
  * @brief 依据目标模式预计算切模占空并注入到快环。
  * 按 TI 多模态控制思路，在切模前先算新模式所需 duty，
@@ -116,9 +150,6 @@ static int32_t s_PowerControl_DutyTickToLoopSeed(int16_t duty_tick)
  */
 void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t vout_adc)
 {
-    float vin_f;
-    float vout_f;
-    float duty_ratio = 0.0F;
     int16_t buck_duty = CtrValue.BuckDuty;
     int16_t boost_duty = CtrValue.BoostDuty;
     int32_t u_seed = 0;
@@ -128,12 +159,12 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
         return;
     }
 
-    vin_f = (float)vin_adc;
-    vout_f = (float)vout_adc;
+    float vin_f = (float) vin_adc;
+    float vout_f = (float) vout_adc;
 
     switch (target_mode){
         case Buck:
-            duty_ratio = vout_f / vin_f;  // TI Eq.2: D = Vout / Vin
+            float duty_ratio = vout_f / vin_f;  // TI Eq.2: D = Vout / Vin
             buck_duty = s_PowerControl_ClampDutyTick((int32_t)(duty_ratio * BSP_POWER_HRTIM_PERIOD_TICK + 0.5F),
                                                      BSP_POWER_BUCK_DUTY_MIN_TICK,
                                                      CtrValue.BUCKMaxDuty);
@@ -184,7 +215,7 @@ RAMFUNC void ADCSample(void){
 
     // 从DMA缓冲器中获取数据
     SADC.Vin  = (uint32_t)((ADC1_RESULT[0] * CAL_VIN_K >> 12) + CAL_VIN_B);
-    SADC.Iin  = (uint32_t)ADC1_RESULT[1];
+    SADC.Iin  = (uint32_t)((ADC1_RESULT[1] * CAL_IIN_K >> 12) + CAL_IIN_B);
     SADC.Vout = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
     SADC.Iout = (uint32_t)((ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B);
 
@@ -210,21 +241,55 @@ RAMFUNC void ADCSample(void){
  * @brief ADC数据计算转换成实际数值的浮点数
  *
  */
-void ADC_calculate(void){
-    VIN  = SADC.VinAvg  * REF_3V3 / ADC_MAX_VALUE * BSP_POWER_VIN_SENSE_SCALE;   // 计算ADC1通道0输入电压采样结果
-    IIN  = (BSP_POWER_CURRENT_BIAS_V - SADC.IinAvg * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+void ADC_calculate(void)
+{
+    // ADC原始值转换
+    float VinRaw =
+        SADC.VinAvg *
+        REF_3V3 /
+        ADC_MAX_VALUE *
+        BSP_POWER_VIN_SENSE_SCALE;
 
-    VOUT = SADC.VoutAvg * REF_3V3 / ADC_MAX_VALUE * BSP_POWER_VOUT_SENSE_SCALE;  // 计算ADC1通道2输出电压采样结果
-    IOUT = (BSP_POWER_CURRENT_BIAS_V - SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE) / BSP_POWER_CURRENT_SENSE_V_PER_A;
+    float VoutRaw =
+        SADC.VoutAvg *
+        REF_3V3 /
+        ADC_MAX_VALUE *
+        BSP_POWER_VOUT_SENSE_SCALE;
 
-    if (IIN < BSP_POWER_IIN_ZERO_DEADBAND_A)
-        IIN = 0.0F;
-    if (IOUT < BSP_POWER_IOUT_ZERO_DEADBAND_A)
-        IOUT = 0.0F;
+    float IinRaw =
+        (BSP_POWER_CURRENT_BIAS_V -
+         SADC.IinAvg *
+         REF_3V3 /
+         ADC_MAX_VALUE)
+        / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
-    Board1_TEMP = GET_NTC1_Temperature();  // 获取NTC1温度
-    Board2_TEMP = GET_NTC2_Temperature();  // 获取NTC2温度
-    CPU_TEMP = GET_CPU_Temperature();      // 获取单片机CPU温度
+    float IoutRaw =
+        (BSP_POWER_CURRENT_BIAS_V -
+         SADC.IoutAvg *
+         REF_3V3 /
+         ADC_MAX_VALUE)
+        / BSP_POWER_CURRENT_SENSE_V_PER_A;
+
+    // 动态IIR滤波
+    VIN  = DynamicIIR(VinRaw,  &VinFilt);
+    VOUT = DynamicIIR(VoutRaw, &VoutFilt);
+    IIN  = DynamicIIR(IinRaw,  &IinFilt);
+    IOUT = DynamicIIR(IoutRaw, &IoutFilt);
+
+    // 电流死区
+    if (fabsf(IIN) < BSP_POWER_IIN_ZERO_DEADBAND_A)
+    {
+        IIN = 0.0f;
+    }
+
+    if (fabsf(IOUT) < BSP_POWER_IOUT_ZERO_DEADBAND_A)
+    {
+        IOUT = 0.0f;
+    }
+
+    Board1_TEMP = GET_NTC1_Temperature();
+    Board2_TEMP = GET_NTC2_Temperature();
+    CPU_TEMP    = GET_CPU_Temperature();
 }
 
 /**
@@ -264,6 +329,7 @@ RAMFUNC void StateM(void){
 void StateMInit(void){
     DF.SMFlag = Wait;    // 状态机跳转至等待软启状态
 }
+
 /**
  * @brief 初始化默认参数与保护阈值。
  * 在上电和状态机复位时恢复控制上下文到安全默认值。
@@ -295,6 +361,7 @@ void ValInit(void){
     MAX_VOUT_OVP_VAL = POWER_CTRL_DEFAULT_OVP_SET;      // 输出过压保护阈值
     MAX_VOUT_OCP_VAL = POWER_CTRL_DEFAULT_OCP_SET;      // 输出过流保护阈值
 }
+
 /**
  * @brief 运行态占位处理函数。
  * 当前主要闭环控制在快环中断中执行，此处保留运行态扩展入口。
@@ -339,6 +406,7 @@ void StateMErr(void)
         DF.SMFlag = Wait;
     }
 }
+
 /**
  * @brief 处理等待状态。
  * 等待输出使能与无故障条件满足后进入软启动流程。
@@ -357,6 +425,7 @@ void StateMWait(void){
         }
     }
 }
+
 /**
  * @brief 处理软启动阶段。
  * 分阶段建立参考值和占空边界，降低启动时的电压电流冲击。
@@ -458,6 +527,7 @@ void StateMRise(void){
         break;
     }
 }
+
 /**
  * @brief 处理输出短路保护与自动重试。
  * 短路成立时立即关断输出，并在限定次数内按延时策略尝试恢复。

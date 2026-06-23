@@ -294,7 +294,7 @@ static uint16_t s_UF4Transport_GetFanSpeedPermille(void)
     {
         compare_value = 1000U;
     }
-    return (uint16_t)compare_value;
+    return compare_value;
 }
 
 static uint16_t s_UF4Transport_GetFanSetPermille(void)
@@ -365,51 +365,82 @@ static void s_UF4Transport_UpdateReadRegisters(void)
  */
 static void s_UF4Transport_ApplyWriteRegisters(void)
 {
-    float set_voltage = (float)s_id_set_voltage_limit / 1000.0F;
-    float set_current = (float)s_id_set_current_limit / 1000.0F;
-    float otp = (float)s_id_otp_set_value / 100.0F;
-    float ovp = (float)s_id_ovp_set_value / 1000.0F;
-    float ocp = (float)s_id_ocp_set_value / 1000.0F;
-    uint16_t fan_set = s_id_fan_set_value;
+    uint8_t set_modified = 0U;
 
-    if(fan_set > (POWER_CTRL_FAN_MAX_RUN_DUTY * 10U))
+    if(UF4_LastWriteContainsID(UF4_ID_SET_VOLTAGE_LIMIT) != 0U)
     {
-        fan_set = POWER_CTRL_FAN_MAX_RUN_DUTY * 10U;
+        SET_Value.Vout = (float)s_id_set_voltage_limit / 1000.0F;
+        set_modified = 1U;
+    }
+    if(UF4_LastWriteContainsID(UF4_ID_SET_CURRENT_LIMIT) != 0U)
+    {
+        SET_Value.Iout = (float)s_id_set_current_limit / 1000.0F;
+        set_modified = 1U;
     }
 
-    SET_Value.Vout = set_voltage;
-    SET_Value.Iout = set_current;
     /* 保护阈值只在合法范围内接受，避免上位机写 0 导致 Vout>=0 永远成立、
        上电即误触发保护。OTP 10~150℃、OVP 1~100V、OCP 0.1~50A。 */
-    if(otp >= 10.0F && otp <= 150.0F)
+    if(UF4_LastWriteContainsID(UF4_ID_OTP_SET_VALUE) != 0U)
     {
-        MAX_OTP_VAL = otp;
-    }
-    if(ovp >= 1.0F && ovp <= 100.0F)
-    {
-        MAX_VOUT_OVP_VAL = ovp;
-    }
-    if(ocp >= 0.1F && ocp <= 50.0F)
-    {
-        MAX_VOUT_OCP_VAL = ocp;
-    }
-    SET_Value.SET_modified_flag = 1.0F;
-    s_UF4Transport_UpdateControlReferenceFromSetting();
-
-    DF.OUTPUT_Flag = (uint8_t)(s_id_power_state != 0U ? 1U : 0U);
-    if(DF.OUTPUT_Flag == 0U)
-    {
-        PowerControl_DisableOutput();
-        if(DF.SMFlag != Err)
+        float otp = (float)s_id_otp_set_value / 100.0F;
+        if(otp >= 10.0F && otp <= 150.0F)
         {
-            DF.SMFlag = Wait;
+            MAX_OTP_VAL = otp;
+        }
+    }
+    if(UF4_LastWriteContainsID(UF4_ID_OVP_SET_VALUE) != 0U)
+    {
+        float ovp = (float)s_id_ovp_set_value / 1000.0F;
+        if(ovp >= 1.0F && ovp <= 100.0F)
+        {
+            MAX_VOUT_OVP_VAL = ovp;
+        }
+    }
+    if(UF4_LastWriteContainsID(UF4_ID_OCP_SET_VALUE) != 0U)
+    {
+        float ocp = (float)s_id_ocp_set_value / 1000.0F;
+        if(ocp >= 0.1F && ocp <= 50.0F)
+        {
+            MAX_VOUT_OCP_VAL = ocp;
         }
     }
 
-    s_uf4_transport.fan_manual_enable = 1U;
-    s_uf4_transport.fan_set_permille = fan_set;
-    FAN_PWM_set((uint16_t)(fan_set / 10U));
-    s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
+    if(set_modified != 0U)
+    {
+        SET_Value.SET_modified_flag = 1.0F;
+        s_UF4Transport_UpdateControlReferenceFromSetting();
+    }
+
+    if(UF4_LastWriteContainsID(UF4_ID_POWER_STATE) != 0U)
+    {
+        DF.OUTPUT_Flag = (uint8_t)(s_id_power_state != 0U ? 1U : 0U);
+        if(DF.OUTPUT_Flag == 0U)
+        {
+            PowerControl_DisableOutput();
+            if(DF.SMFlag != Err)
+            {
+                DF.SMFlag = Wait;
+            }
+        }
+    }
+
+    if(UF4_LastWriteContainsID(UF4_ID_FAN_SET_VALUE) != 0U)
+    {
+        uint16_t fan_set = s_id_fan_set_value;
+        uint16_t fan_pwm_percent;
+
+        if(fan_set > 1000U)
+        {
+            fan_set = 1000U;
+        }
+
+        fan_pwm_percent = (uint16_t)(fan_set / 10U);
+
+        s_uf4_transport.fan_manual_enable = 1U;
+        s_uf4_transport.fan_set_permille = fan_set;
+        FAN_PWM_set(fan_pwm_percent);
+        s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
+    }
 }
 
 static HAL_StatusTypeDef s_UF4Transport_SendOnChannel(UF4Transport_ChannelContext *channel, const uint8_t *data, uint16_t len)
@@ -874,7 +905,7 @@ void UF4Transport_Init(void)
     memset(&s_uf4_transport, 0, sizeof(s_uf4_transport));
     s_uf4_transport.selected_port = s_UF4Transport_GetFixedPort();
     s_uf4_transport.fan_manual_enable = 1U;
-    s_uf4_transport.fan_set_permille = POWER_CTRL_FAN_MAX_RUN_DUTY * 10U;
+    s_uf4_transport.fan_set_permille = 1000U;
     s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
 
     for(i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
@@ -882,7 +913,6 @@ void UF4Transport_Init(void)
         s_uf4_transport.channels[i].port = (UF4Transport_Port)i;
     }
 
-    FAN_PWM_set(POWER_CTRL_FAN_MAX_RUN_DUTY);
     s_UF4Transport_UpdateReadRegisters();
     UF4_IDTableBind(s_uf4_id_table, sizeof(s_uf4_id_table) / sizeof(s_uf4_id_table[0]));
     UF4_Init(s_UF4Transport_Uf4Tx, NULL);
@@ -907,9 +937,6 @@ void UF4Transport_Init(void)
  */
 void UF4Transport_RunTask(void)
 {
-    uint32_t i;
-    const uint32_t tick_now = HAL_GetTick();
-
     if(s_uf4_transport_initialized == 0U)
     {
         return;
@@ -924,14 +951,14 @@ void UF4Transport_RunTask(void)
     s_UF4Transport_PollUartRx();
     s_UF4Transport_CdcTraceTask();
 
-    if((s_uf4_transport.fan_manual_enable != 0U) && ((tick_now - s_uf4_transport.last_fan_apply_tick) >= 50U))
-    {
-        FAN_PWM_set((uint16_t)(s_uf4_transport.fan_set_permille / 10U));
-        s_uf4_transport.last_fan_apply_tick = tick_now;
-    }
+    // if((s_uf4_transport.fan_manual_enable != 0U) && ((tick_now - s_uf4_transport.last_fan_apply_tick) >= 50U))
+    // {
+    //     FAN_PWM_set((uint16_t)(s_uf4_transport.fan_set_permille / 10U));
+    //     s_uf4_transport.last_fan_apply_tick = tick_now;
+    // }
 
     /* 普通 TX 收尾仍在主循环推进，避免在中断中启动 UART DMA。 */
-    for(i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
+    for(uint32_t i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
     {
         if(s_UF4Transport_IsPortEnabled(s_uf4_transport.channels[i].port) != 0U)
         {

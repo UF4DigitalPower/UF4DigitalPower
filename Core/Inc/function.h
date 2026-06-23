@@ -30,8 +30,8 @@
 #define POWER_CTRL_DEFAULT_SET_VOLTAGE       5.0F   // 默认输出电压
 #define POWER_CTRL_DEFAULT_SET_CURRENT       1.0F   // 默认输出电流
 #define POWER_CTRL_DEFAULT_OTP_SET           80.0F  // 默认OTP值
-#define POWER_CTRL_DEFAULT_OVP_SET           45.0F  // 默认过压值 45v
-#define POWER_CTRL_DEFAULT_OCP_SET           10.0F  // 默认过流值 10A
+#define POWER_CTRL_DEFAULT_OVP_SET           46.0F  // 默认过压值 45v
+#define POWER_CTRL_DEFAULT_OCP_SET           11.1F  // 默认过流值 10A
 
 #define POWER_CTRL_FAN_MIN_RUN_DUTY          5U     // 风扇非零运行时的最小占空比
 #define POWER_CTRL_FAN_MAX_RUN_DUTY          95U    // 风扇运行时的最大安全占空比
@@ -39,9 +39,7 @@
 #define POWER_CTRL_FAN_STARTUP_KICK_MS       300U   // 风扇启动强启持续时间
 
 
-#define POWER_CTRL_VIN_OVP                5.0F      // 输入过压阈值
-
-#define POWER_CTRL_SHORT_CURRENT          10.0F     // 短接电流阈值
+#define POWER_CTRL_SHORT_CURRENT          5.0F      // 短接电流阈值
 #define POWER_CTRL_SHORT_VOLTAGE          0.5F      // 短接电压阈值
 
 /*
@@ -76,15 +74,15 @@
  */
 #define BSP_POWER_CURRENT_SHUNT_OHM          0.007F // 检流电阻
 #define BSP_POWER_CURRENT_AMP_GAIN           20.0F  // INA240A1放大倍数
-#define BSP_POWER_CURRENT_BIAS_V             1.650F // 中点偏置电压
+#define BSP_POWER_CURRENT_BIAS_V             1.648F // 中点偏置电压
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)  // 每安培对应的采样电压
 
 #define BSP_POWER_IIN_SCALE                  1.0F
 #define BSP_POWER_IOUT_SCALE                 1.0F
 #define BSP_POWER_IIN_GAIN                   BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IIN_SCALE
 #define BSP_POWER_IOUT_GAIN                  BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IOUT_SCALE
-#define BSP_POWER_IIN_ZERO_DEADBAND_A        0.08F  // 输入电流零点死区，抑制空载零点抖动上报
-#define BSP_POWER_IOUT_ZERO_DEADBAND_A       0.08F  // 输出电流零点死区，抑制空载零点抖动上报
+#define BSP_POWER_IIN_ZERO_DEADBAND_A        0.04F  // 输入电流零点死区，抑制空载零点抖动上报
+#define BSP_POWER_IOUT_ZERO_DEADBAND_A       0.04F  // 输出电流零点死区，抑制空载零点抖动上报
 
 // 硬件定时器参数
 #define BSP_POWER_HRTIM_PERIOD_TICK          27200U  // 27200 tick @ 5.44 GHz 等效 HRTIM 时钟
@@ -105,6 +103,9 @@
 
 #define CAL_VIN_K 3985  // 输入电压矫正K值
 #define CAL_VIN_B 33    // 输入电压矫正B值
+
+#define CAL_IIN_K 4095
+# define CAL_IIN_B 1
 
 #define CAL_VOUT_K 4059 // 输出电压矫正K值
 #define CAL_VOUT_B 13	// 输出电压矫正B值
