@@ -141,21 +141,6 @@ __STATIC_FORCEINLINE float DynamicIIR(float raw, float *filt)
     return *filt;
 }
 
-static void s_ADC_UpdateSlowInputChannels(void)
-{
-    if (HAL_ADCEx_InjectedStart(&hadc1) != HAL_OK){
-        return;
-    }
-
-    if (HAL_ADCEx_InjectedPollForConversion(&hadc1, 1U) != HAL_OK){
-        (void)HAL_ADCEx_InjectedStop(&hadc1);
-        return;
-    }
-
-    ADC1_RESULT[ADC1_RESULT_VIN_INDEX] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
-    ADC1_RESULT[ADC1_RESULT_IIN_INDEX] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2);
-}
-
 /**
  * @brief 依据目标模式预计算切模占空并注入到快环。
  * 按 TI 多模态控制思路，在切模前先算新模式所需 duty，
@@ -228,8 +213,6 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
  */
 RAMFUNC void ADCSample(void){
     static uint32_t VinAvgSum = 0, IinAvgSum = 0, VoutAvgSum = 0, IoutAvgSum = 0;
-
-    s_ADC_UpdateSlowInputChannels();
 
     // 从DMA缓冲器中获取数据
     SADC.Vin  = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VIN_INDEX] * CAL_VIN_K >> 12) + CAL_VIN_B);
