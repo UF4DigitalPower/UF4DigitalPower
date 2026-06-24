@@ -106,19 +106,6 @@ file(WRITE "${UF4_BANNER_TXT}" "
   ██████╔╝╚██████╔╝██║███████╗██████╔╝    ███████║╚██████╔╝╚██████╗╚██████╗███████╗███████║███████║
   ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝     ╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝╚══════╝╚══════╝╚══════╝
 
-  ┌──────────────────────────────────────────────────────────────────────────────┐
-  │ Project      : ${UF4_PROJECT_NAME}
-  │ Build Type   : ${UF4_BUILD_TYPE}
-  │ Build Time   : ${UF4_BUILD_TIME}
-  │ Host Platform: ${UF4_HOST_SYSTEM_NAME} ${UF4_HOST_SYSTEM_PROCESSOR}
-  │ Target System: ${UF4_TARGET_SYSTEM_NAME}
-  │ MCU          : STM32G474CBTx / STM32G474xx
-  │ Memory       : FLASH 128 KB, RAM 128 KB, CCMRAM 32 KB
-  │ Compiler     : ${UF4_C_COMPILER_ID} ${UF4_C_COMPILER_VERSION}
-  │ Toolchain    : ${UF4_C_COMPILER}
-  │ Output       : ${UF4_OUTPUT_ELF}
-  └──────────────────────────────────────────────────────────────────────────────┘
-
   UF4DigitalPower firmware generated successfully.
 
 ")
@@ -129,14 +116,6 @@ add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_NAME}.elf> ${BIN_FILE}
         COMMAND ${CMAKE_COMMAND}
                 -DUF4_BANNER_TXT=${UF4_BANNER_TXT}
-                -DUF4_PROJECT_NAME=${PROJECT_NAME}
-                -DUF4_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-                -DUF4_HOST_SYSTEM_NAME=${CMAKE_HOST_SYSTEM_NAME}
-                -DUF4_HOST_SYSTEM_PROCESSOR=${CMAKE_HOST_SYSTEM_PROCESSOR}
-                -DUF4_TARGET_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
-                -DUF4_C_COMPILER_ID=${CMAKE_C_COMPILER_ID}
-                -DUF4_C_COMPILER_VERSION=${CMAKE_C_COMPILER_VERSION}
-                -DUF4_C_COMPILER=${CMAKE_C_COMPILER}
                 -DUF4_OUTPUT_ELF=$<TARGET_FILE:${PROJECT_NAME}.elf>
                 -P "${UF4_BANNER_SCRIPT}"
         COMMAND ${CMAKE_COMMAND} -E cat "${UF4_BANNER_TXT}"

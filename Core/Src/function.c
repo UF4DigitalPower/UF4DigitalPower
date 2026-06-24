@@ -18,6 +18,7 @@
 
 #include "function.h"
 #include "adc.h"
+#include "pid.h"
 #include "usart.h"
 #include "tim.h"
 #include "hrtim.h"
@@ -27,7 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
-volatile uint16_t ADC1_RESULT[4] = {0, 0, 0, 0};                   // ADC采样外设到内存的DMA数据保存寄存器
+volatile uint16_t ADC1_RESULT[4] = {0, 0, 0, 0};                   // ADC1 DMA采样结果：Vout, Iout, Vin, Iin
 
 volatile float MAX_OTP_VAL;                                        // 过温保护阈值
 volatile float MAX_VOUT_OVP_VAL;                                   // 输出过压保护阈值
@@ -140,6 +141,21 @@ __STATIC_FORCEINLINE float DynamicIIR(float raw, float *filt)
     return *filt;
 }
 
+static void s_ADC_UpdateSlowInputChannels(void)
+{
+    if (HAL_ADCEx_InjectedStart(&hadc1) != HAL_OK){
+        return;
+    }
+
+    if (HAL_ADCEx_InjectedPollForConversion(&hadc1, 1U) != HAL_OK){
+        (void)HAL_ADCEx_InjectedStop(&hadc1);
+        return;
+    }
+
+    ADC1_RESULT[ADC1_RESULT_VIN_INDEX] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1);
+    ADC1_RESULT[ADC1_RESULT_IIN_INDEX] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2);
+}
+
 /**
  * @brief 依据目标模式预计算切模占空并注入到快环。
  * 按 TI 多模态控制思路，在切模前先算新模式所需 duty，
@@ -213,11 +229,13 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
 RAMFUNC void ADCSample(void){
     static uint32_t VinAvgSum = 0, IinAvgSum = 0, VoutAvgSum = 0, IoutAvgSum = 0;
 
+    s_ADC_UpdateSlowInputChannels();
+
     // 从DMA缓冲器中获取数据
-    SADC.Vin  = (uint32_t)((ADC1_RESULT[0] * CAL_VIN_K >> 12) + CAL_VIN_B);
-    SADC.Iin  = (uint32_t)((ADC1_RESULT[1] * CAL_IIN_K >> 12) + CAL_IIN_B);
-    SADC.Vout = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
-    SADC.Iout = (uint32_t)((ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B);
+    SADC.Vin  = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VIN_INDEX] * CAL_VIN_K >> 12) + CAL_VIN_B);
+    SADC.Iin  = (uint32_t)((ADC1_RESULT[ADC1_RESULT_IIN_INDEX] * CAL_IIN_K >> 12) + CAL_IIN_B);
+    SADC.Vout = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
+    SADC.Iout = (uint32_t)((ADC1_RESULT[ADC1_RESULT_IOUT_INDEX] * CAL_IOUT_K >> 12) + CAL_IOUT_B);
 
     if (SADC.Vin < 2)  // 仅在接近零码时清零，避免低压输入被直接抹掉
         SADC.Vin = 0;
@@ -390,7 +408,7 @@ void PowerControl_DisableOutput(void){
     HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
 
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK);
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, BSP_POWER_HRTIM_PERIOD_TICK >> 1);
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, PowerControl_GetAdcSampleTick());
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, BSP_POWER_BOOST_DUTY_MIN_TICK);
 }
 
@@ -675,8 +693,8 @@ RAMFUNC void BBMode(void){
     uint8_t PreBBFlag = 0;// 上一次模式状态量
     PreBBFlag = DF.BBFlag;// 暂存当前的模式状态量
 
-    uint32_t VIN_ADC = ADC1_RESULT[0]; // 输入电压ADC采样值
-    uint32_t VOUT_ADC = (uint32_t)((ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B); // 输出电压ADC校正值
+    uint32_t VIN_ADC = ADC1_RESULT[ADC1_RESULT_VIN_INDEX]; // 输入电压ADC采样值
+    uint32_t VOUT_ADC = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B); // 输出电压ADC校正值
     static uint32_t VIN_MODE_REF = 0;
 
     // 对输入电压ADC采样值累计取平均值
@@ -684,7 +702,7 @@ RAMFUNC void BBMode(void){
     static uint8_t VIN_ADC_Count = 0;
 
     if (VIN_ADC_Count < 5){
-        VIN_ADC_SUM += ADC1_RESULT[0];
+        VIN_ADC_SUM += ADC1_RESULT[ADC1_RESULT_VIN_INDEX];
         VIN_ADC_Count++;
     }
     if (VIN_ADC_Count == 5){

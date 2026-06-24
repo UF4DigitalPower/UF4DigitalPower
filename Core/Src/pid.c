@@ -19,7 +19,7 @@
 #include "function.h"
 #include "hrtim.h"
 
-extern volatile uint16_t ADC1_RESULT[4];          // ADC1通道1~4采样结果
+extern volatile uint16_t ADC1_RESULT[4];          // ADC1 DMA采样结果：Vout, Iout, Vin, Iin
 CCRAM volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0; // 电压误差
 CCRAM volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
 CCRAM volatile int32_t u0 = 0, u1 = 0;                  // 电压环输出量
@@ -30,7 +30,12 @@ static CCRAM uint8_t s_vout_pid_filter_valid = 0U;
 
 #define VLOOP_ADC_FILTER_SHIFT 2U
 #define MIX_VLOOP_BOOST_DUTY_MAX_TICK ((int16_t)((BSP_POWER_BOOST_DUTY_MAX_TICK * 3U) / 4U))
-#define ADC_SAMPLE_TICK (BSP_POWER_HRTIM_PERIOD_TICK >> 1)
+#define ADC_SAMPLE_TICK_DEFAULT (20400)
+#define ADC_SAMPLE_TICK_MARGIN  680U
+#define ADC_SAMPLE_TICK_MIN     ADC_SAMPLE_TICK_MARGIN
+#define ADC_SAMPLE_TICK_MAX     (BSP_POWER_HRTIM_PERIOD_TICK - ADC_SAMPLE_TICK_MARGIN)
+
+CCRAM volatile uint16_t g_adc_sample_tick = ADC_SAMPLE_TICK_DEFAULT;
 
 static inline int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick)
 {
@@ -72,9 +77,25 @@ static inline int16_t s_VLoop_GetMixBoostDutyMax(void)
     return max_duty;
 }
 
-static inline uint32_t s_PowerControl_GetAdcSampleTick(void)
+static inline uint16_t s_PowerControl_ClampAdcSampleTick(uint16_t tick)
 {
-    return ADC_SAMPLE_TICK;
+    if (tick < ADC_SAMPLE_TICK_MIN){
+        return ADC_SAMPLE_TICK_MIN;
+    }
+    if (tick > ADC_SAMPLE_TICK_MAX){
+        return ADC_SAMPLE_TICK_MAX;
+    }
+    return tick;
+}
+
+void PowerControl_SetAdcSampleTick(uint16_t tick)
+{
+    g_adc_sample_tick = s_PowerControl_ClampAdcSampleTick(tick);
+}
+
+uint16_t PowerControl_GetAdcSampleTick(void)
+{
+    return s_PowerControl_ClampAdcSampleTick(g_adc_sample_tick);
 }
 
 /**
@@ -111,8 +132,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
 
     CtrValue.Vout_ref = CtrValue.Vout_SETref; // 输出参考电压设置为设置电压
 
-    int32_t VoutRaw = (ADC1_RESULT[2] * CAL_VOUT_K >> 12) + CAL_VOUT_B; // 获取矫正后的输出电压
-    int32_t IoutTemp = (ADC1_RESULT[3] * CAL_IOUT_K >> 12) + CAL_IOUT_B; // 获取矫正后的输出电流
+    int32_t VoutRaw = (ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B; // 获取矫正后的输出电压
+    int32_t IoutTemp = (ADC1_RESULT[ADC1_RESULT_IOUT_INDEX] * CAL_IOUT_K >> 12) + CAL_IOUT_B; // 获取矫正后的输出电流
     int32_t VoutTemp;
 
     if (s_vout_pid_filter_valid == 0U || DF.PWMENFlag == 0U){
@@ -376,8 +397,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     // 更新对应寄存器
     // buck占空比
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK - CtrValue.BuckDuty);
-    // ADC触发采样点：固定在周期中点，避免 ADC 扫描延迟把 Vout 采样推到 PWM 边沿。
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, s_PowerControl_GetAdcSampleTick());
+    // ADC触发采样点：Timer A CMP3 触发 HRTIM_TRG1，可运行时调节以避开开关噪声。
+    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, PowerControl_GetAdcSampleTick());
     // Boost占空比
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, CtrValue.BoostDuty);
 }

@@ -101,8 +101,8 @@
 #define MAX_SHORT_I 10.1F   // 短路电流判据
 #define MIN_SHORT_V 0.5F    // 短路电压判据
 
-#define CAL_VIN_K 3985  // 输入电压矫正K值
-#define CAL_VIN_B 33    // 输入电压矫正B值
+#define CAL_VIN_K 4095  // 输入电压矫正K值
+#define CAL_VIN_B 1    // 输入电压矫正B值
 
 #define CAL_IIN_K 4095
 # define CAL_IIN_B 1
@@ -123,6 +123,12 @@
 #define F_SW_IOUT_OCP 0x0010 // 输出过流
 #define F_SW_SHORT 0x0020	 // 输出短路
 #define F_OTP 0x0040		 // 温度过高
+
+#define ADC1_RESULT_VOUT_INDEX 0U
+#define ADC1_RESULT_IOUT_INDEX 1U
+#define ADC1_RESULT_VIN_INDEX  2U
+#define ADC1_RESULT_IIN_INDEX  3U
+#define ADC1_RESULT_FAST_COUNT 2U
 
 #define LED_R_ON     HAL_GPIO_WritePin(GPIOB, LED_R_Pin, GPIO_PIN_SET);
 #define LED_R_OFF  HAL_GPIO_WritePin(GPIOB, LED_R_Pin, GPIO_PIN_RESET);
@@ -214,7 +220,9 @@ typedef enum
     CC	// 恒流模式
 } _CVCC_Mode;
 
-extern volatile uint16_t ADC1_RESULT[4];		// ADC1通道1~4采样结果
+
+
+extern volatile uint16_t ADC1_RESULT[4];		// ADC1 DMA采样结果：Vout, Iout, Vin, Iin
 extern volatile uint8_t LED_Short_Flag;		    // 蜂鸣器短叫触发标志位
 extern volatile uint8_t LED_Flag;			    // 蜂鸣器当前状态标志位
 extern volatile uint8_t LED_Middle_Flag;		// 蜂鸣器中等时间长度鸣叫触发标志位

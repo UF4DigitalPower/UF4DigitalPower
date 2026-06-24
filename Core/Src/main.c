@@ -145,7 +145,7 @@ int main(void)
   HAL_ADCEx_Calibration_Start(&hadc3, ADC_SINGLE_ENDED); // 校准ADC3
   HAL_ADCEx_Calibration_Start(&hadc5, ADC_SINGLE_ENDED); // 校准ADC5
 
-  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)(void *)ADC1_RESULT, 4); // 启动ADC1采样和DMA数据传送,采样输入输出电压电流
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)(void *)ADC1_RESULT, ADC1_RESULT_FAST_COUNT); // DMA只搬运VOUT/IOUT，VIN/IIN由TIM7慢速注入采样
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_A);              // 开启HRTIM波形计数器
   HAL_HRTIM_WaveformCountStart(&hhrtim1, HRTIM_TIMERID_TIMER_D);              // 开启HRTIM波形计数器
   __HAL_HRTIM_TIMER_ENABLE_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP); // 开启HRTIM定时器D的中断

@@ -46,5 +46,7 @@
 
 void PID_Init(void);
 void BuckBoostVILoopCtlPID(void);
+void PowerControl_SetAdcSampleTick(uint16_t tick);
+uint16_t PowerControl_GetAdcSampleTick(void);
 
 #endif //PID_H
