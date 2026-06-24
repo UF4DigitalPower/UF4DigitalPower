@@ -24,6 +24,8 @@
 #define UF4_TRANSPORT_CDC_TRACE_TX_CHUNK_SIZE 512U
 #define UF4_TRANSPORT_TX_QUEUE_DEPTH 4U
 #define UF4_TRANSPORT_HOST_REQUEST_STREAM_PAUSE_MS 80U
+#define UF4_TRANSPORT_FAN_MAX_PERMILLE ((uint16_t)(POWER_CTRL_FAN_MAX_RUN_DUTY * 10U))
+#define UF4_TRANSPORT_FAN_MIN_PERMILLE ((uint16_t)(POWER_CTRL_FAN_MIN_RUN_DUTY * 10U))
 
 typedef struct
 {
@@ -288,13 +290,7 @@ static uint16_t s_UF4Transport_GetLoopFeedbackMa(void)
 
 static uint16_t s_UF4Transport_GetFanSpeedPermille(void)
 {
-    uint32_t compare_value = __HAL_TIM_GET_COMPARE(&htim8, TIM_CHANNEL_3);
-
-    if(compare_value > 1000U)
-    {
-        compare_value = 1000U;
-    }
-    return compare_value;
+    return s_uf4_transport.fan_set_permille;
 }
 
 static uint16_t s_UF4Transport_GetFanSetPermille(void)
@@ -429,15 +425,20 @@ static void s_UF4Transport_ApplyWriteRegisters(void)
         uint16_t fan_set = s_id_fan_set_value;
         uint16_t fan_pwm_percent;
 
-        if(fan_set > 1000U)
+        if(fan_set == 0U || fan_set > UF4_TRANSPORT_FAN_MAX_PERMILLE)
         {
-            fan_set = 1000U;
+            fan_set = UF4_TRANSPORT_FAN_MAX_PERMILLE;
+        }
+        else if(fan_set < UF4_TRANSPORT_FAN_MIN_PERMILLE)
+        {
+            fan_set = UF4_TRANSPORT_FAN_MIN_PERMILLE;
         }
 
         fan_pwm_percent = (uint16_t)(fan_set / 10U);
 
         s_uf4_transport.fan_manual_enable = 1U;
         s_uf4_transport.fan_set_permille = fan_set;
+        s_id_fan_set_value = fan_set;
         FAN_PWM_set(fan_pwm_percent);
         s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
     }
@@ -905,7 +906,7 @@ void UF4Transport_Init(void)
     memset(&s_uf4_transport, 0, sizeof(s_uf4_transport));
     s_uf4_transport.selected_port = s_UF4Transport_GetFixedPort();
     s_uf4_transport.fan_manual_enable = 1U;
-    s_uf4_transport.fan_set_permille = 1000U;
+    s_uf4_transport.fan_set_permille = UF4_TRANSPORT_FAN_MAX_PERMILLE;
     s_uf4_transport.last_fan_apply_tick = HAL_GetTick();
 
     for(i = 0U; i < UF4_TRANSPORT_CHANNEL_COUNT; ++i)
