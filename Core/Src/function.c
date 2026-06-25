@@ -239,6 +239,29 @@ RAMFUNC void ADCSample(void){
 }
 
 /**
+ * @brief BOOST电流零点校准
+ *
+ */
+__STATIC_FORCEINLINE float ADC_BOOST_CurrentZeroCalibrate(void)
+{
+    switch (DF.BBFlag) {
+        case Buck:
+            return (BSP_POWER_CURRENT_BIAS_V -
+                    SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE)
+                   / BSP_POWER_CURRENT_SENSE_V_PER_A;
+
+        case Boost:
+        case Mix:
+            return (BSP_POWER_CURRENT_COMP_BIAS_V -
+                    SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE)
+                   / BSP_POWER_CURRENT_SENSE_V_PER_A;
+
+        default:
+            return 0.0f;
+    }
+}
+
+/**
  * @brief ADC数据计算转换成实际数值的浮点数
  *
  */
@@ -264,13 +287,7 @@ void ADC_calculate(void)
          ADC_MAX_VALUE)
         / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
-    float IoutRaw =
-        (BSP_POWER_CURRENT_BIAS_V -
-         SADC.IoutAvg *
-         REF_3V3 /
-         ADC_MAX_VALUE)
-        / BSP_POWER_CURRENT_SENSE_V_PER_A;
-
+    float IoutRaw = ADC_BOOST_CurrentZeroCalibrate();
     // 动态IIR滤波
     VIN  = DynamicIIR(VinRaw,  &VinFilt);
     VOUT = DynamicIIR(VoutRaw, &VoutFilt);
@@ -278,15 +295,8 @@ void ADC_calculate(void)
     IOUT = DynamicIIR(IoutRaw, &IoutFilt);
 
     // 电流死区
-    if (fabsf(IIN) < BSP_POWER_IIN_ZERO_DEADBAND_A)
-    {
-        IIN = 0.0f;
-    }
-
-    if (fabsf(IOUT) < BSP_POWER_IOUT_ZERO_DEADBAND_A)
-    {
-        IOUT = 0.0f;
-    }
+    if (fabsf(IIN)  < BSP_POWER_IIN_ZERO_DEADBAND_A) {IIN  = 0.0f;}
+    if (fabsf(IOUT) < BSP_POWER_IOUT_ZERO_DEADBAND_A){IOUT = 0.0f;}
 
     Board1_TEMP = GET_NTC1_Temperature();
     Board2_TEMP = GET_NTC2_Temperature();

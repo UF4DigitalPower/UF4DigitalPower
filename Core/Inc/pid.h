@@ -36,17 +36,24 @@
 #define ILOOP_KP 2 // 电流环PID补偿器P值
 #define ILOOP_KI 1 // 电流环PID补偿器I值
 #define ILOOP_KD 0 // 电流环PID补偿器D值
-#define ILOOP_VREF_STEP_LIMIT 8 // 单次电流环调节输出参考的最大ADC码
-#define ILOOP_INTEGRAL_LIMIT 2048 // 电流环积分限幅，避免过流后深度积分啸叫
-#define ILOOP_VREF_OFFSET_LIMIT 2048 // 限流时允许累计拉低输出参考的最大ADC码
-#define ILOOP_RELEASE_STEP 2 // 退出限流时输出参考恢复步进
-#define ILOOP_ENTER_MARGIN 4 // 高于限流点该ADC码数时进入电流环
-#define ILOOP_RELEASE_MARGIN 16 // 低于限流点该ADC码数时释放电流环
-#define ILOOP_RELEASE_HOLD_CYCLES 400U // 释放限流前保持周期，400周期@200kHz约2ms
+#define ILOOP_VREF_STEP_LIMIT 8         // 单次电流环调节输出参考的最大ADC码
+#define ILOOP_INTEGRAL_LIMIT 2048       // 电流环积分限幅，避免过流后深度积分啸叫
+#define ILOOP_VREF_OFFSET_LIMIT 2048    // 限流时允许累计拉低输出参考的最大ADC码
+#define ILOOP_RELEASE_STEP 2            // 退出限流时输出参考恢复步进
+#define ILOOP_ENTER_MARGIN 4            // 高于限流点该ADC码数时进入电流环
+#define ILOOP_RELEASE_MARGIN 16         // 低于限流点该ADC码数时释放电流环
+#define ILOOP_RELEASE_HOLD_CYCLES 400U  // 释放限流前保持周期，400周期@200kHz约2ms
 
-void PID_Init(void);
-void BuckBoostVILoopCtlPID(void);
-void PowerControl_SetAdcSampleTick(uint16_t tick);
-uint16_t PowerControl_GetAdcSampleTick(void);
+#define VLOOP_ADC_FILTER_SHIFT 2U                                                             // 电压环积分量滤波系数
+#define MIX_VLOOP_BOOST_DUTY_MAX_TICK ((int16_t)((BSP_POWER_BOOST_DUTY_MAX_TICK * 3U) / 4U))  // 混合模式下，buck的输出占空比最大值
+#define ADC_SAMPLE_TICK_DEFAULT (int16_t)(BSP_POWER_HRTIM_PERIOD_TICK * 0.6)                  // 默认ADC采样时间
+#define ADC_SAMPLE_TICK_MARGIN  680U                                                          // 默认ADC采样时间边沿
+#define ADC_SAMPLE_TICK_MIN     ADC_SAMPLE_TICK_MARGIN                                        // 默认ADC采样时间最大
+#define ADC_SAMPLE_TICK_MAX     (BSP_POWER_HRTIM_PERIOD_TICK - ADC_SAMPLE_TICK_MARGIN)        // 默认ADC采样时间最大
+
+void PID_Init(void);                                // PID初始化
+void BuckBoostVILoopCtlPID(void);                   // 恒压-PID型电压环控制
+void PowerControl_SetAdcSampleTick(uint16_t tick);  // 设置ADC采样时间
+uint16_t PowerControl_GetAdcSampleTick(void);       // 获取ADC采样时间
 
 #endif //PID_H

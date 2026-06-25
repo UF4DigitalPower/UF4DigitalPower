@@ -74,7 +74,9 @@
  */
 #define BSP_POWER_CURRENT_SHUNT_OHM          0.007F // 检流电阻
 #define BSP_POWER_CURRENT_AMP_GAIN           20.0F  // INA240A1放大倍数
-#define BSP_POWER_CURRENT_BIAS_V             1.65F // 中点偏置电压
+#define BSP_POWER_CURRENT_BIAS_V             1.65F  // 中点偏置电压
+#define BSP_POWER_CURRENT_COMP_BIAS_V        1.63F  // 硬件BUG 使用BOOST 动态补偿
+
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)  // 每安培对应的采样电压
 
 #define BSP_POWER_IIN_SCALE                  1.0F

@@ -19,35 +19,27 @@
 #include "function.h"
 #include "hrtim.h"
 
-extern volatile uint16_t ADC1_RESULT[4];          // ADC1 DMA采样结果：Vout, Iout, Vin, Iin
-CCRAM volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0; // 电压误差
-CCRAM volatile int32_t IErr0 = 0, IErr1 = 0;            // 电流误差
-CCRAM volatile int32_t u0 = 0, u1 = 0;                  // 电压环输出量
-CCRAM volatile int32_t i0 = 0, i1 = 0;                  // 电流环输出量
-CCRAM volatile _CVCC_Mode CVCC_Mode = CV;               // 恒流恒压模式标志位
-static CCRAM int32_t s_vout_pid_filter = 0;
-static CCRAM uint8_t s_vout_pid_filter_valid = 0U;
+extern volatile uint16_t ADC1_RESULT[4];                                 // ADC1 DMA采样结果：Vout, Iout, Vin, Iin
+CCRAM volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0;                  // 电压误差
+CCRAM volatile int32_t IErr0 = 0, IErr1 = 0;                             // 电流误差
+CCRAM volatile int32_t u0 = 0, u1 = 0;                                   // 电压环输出量
+CCRAM volatile int32_t i0 = 0, i1 = 0;                                   // 电流环输出量
+CCRAM volatile _CVCC_Mode CVCC_Mode = CV;                                // 恒流恒压模式标志位
+CCRAM volatile uint16_t g_adc_sample_tick = ADC_SAMPLE_TICK_DEFAULT;     // ADC采样时间
 
-#define VLOOP_ADC_FILTER_SHIFT 2U
-#define MIX_VLOOP_BOOST_DUTY_MAX_TICK ((int16_t)((BSP_POWER_BOOST_DUTY_MAX_TICK * 3U) / 4U))
-#define ADC_SAMPLE_TICK_DEFAULT (BSP_POWER_HRTIM_PERIOD_TICK >> 1)
-#define ADC_SAMPLE_TICK_MARGIN  680U
-#define ADC_SAMPLE_TICK_MIN     ADC_SAMPLE_TICK_MARGIN
-#define ADC_SAMPLE_TICK_MAX     (BSP_POWER_HRTIM_PERIOD_TICK - ADC_SAMPLE_TICK_MARGIN)
+static CCRAM int32_t s_vout_pid_filter = 0;                              // 电压环积分量滤波量
+static CCRAM uint8_t s_vout_pid_filter_valid = 0U;                       // 电压环积分量滤波量是否有效
 
-CCRAM volatile uint16_t g_adc_sample_tick = ADC_SAMPLE_TICK_DEFAULT;
 
-static inline int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick)
-{
+__STATIC_FORCEINLINE int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick){  // 获取电压环输出最小值
     return ((((int32_t)duty_tick + 2) / 3) << 8);
 }
 
-static inline int32_t s_VLoop_DutyMaxToLoopLimit(int16_t duty_tick)
-{
+__STATIC_FORCEINLINE int32_t s_VLoop_DutyMaxToLoopLimit(int16_t duty_tick){  // 获取电压环输出最大值
     return (((int32_t)duty_tick / 3) << 8);
 }
 
-static inline void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max_duty)
+__STATIC_FORCEINLINE void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max_duty)  // 限制电压环输出
 {
     int32_t min_u = s_VLoop_DutyMinToLoopLimit(min_duty);
     int32_t max_u = s_VLoop_DutyMaxToLoopLimit(max_duty);
@@ -64,7 +56,7 @@ static inline void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max_duty)
     u1 = u0;
 }
 
-static inline int16_t s_VLoop_GetMixBoostDutyMax(void)
+__STATIC_FORCEINLINE int16_t s_VLoop_GetMixBoostDutyMax(void)
 {
     int16_t max_duty = MIX_VLOOP_BOOST_DUTY_MAX_TICK;
 
@@ -77,7 +69,7 @@ static inline int16_t s_VLoop_GetMixBoostDutyMax(void)
     return max_duty;
 }
 
-static inline uint16_t s_PowerControl_ClampAdcSampleTick(uint16_t tick)
+__STATIC_FORCEINLINE uint16_t s_PowerControl_ClampAdcSampleTick(uint16_t tick)
 {
     if (tick < ADC_SAMPLE_TICK_MIN){
         return ADC_SAMPLE_TICK_MIN;
@@ -134,7 +126,6 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
 
     int32_t VoutRaw = (ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B; // 获取矫正后的输出电压
     int32_t IoutTemp = (ADC1_RESULT[ADC1_RESULT_IOUT_INDEX] * CAL_IOUT_K >> 12) + CAL_IOUT_B; // 获取矫正后的输出电流
-    int32_t VoutTemp;
 
     if (s_vout_pid_filter_valid == 0U || DF.PWMENFlag == 0U){
         s_vout_pid_filter = VoutRaw;
@@ -143,7 +134,8 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     else{
         s_vout_pid_filter += (VoutRaw - s_vout_pid_filter) >> VLOOP_ADC_FILTER_SHIFT;
     }
-    VoutTemp = s_vout_pid_filter;
+
+    int32_t VoutTemp = s_vout_pid_filter;  // 获取电压环输出
 
     if (DF.PWMENFlag == 0U || DF.OUTPUT_Flag == 0U){
         I_Integral = 0;
@@ -158,7 +150,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     if (IoutTemp <= (CtrValue.Iout_ref - ILOOP_ENTER_MARGIN)){
         i_limit_active = 1U;
         i_release_cnt = 0U;
-    }
+    }  // 输入电流过低，需要拉低输出参考量。
     else if (i_limit_active != 0U && IoutTemp >= (CtrValue.Iout_ref + ILOOP_RELEASE_MARGIN)){
         if (i_release_cnt < ILOOP_RELEASE_HOLD_CYCLES){
             i_release_cnt++;
@@ -169,10 +161,10 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             I_Integral = 0;
             i0 = 0;
         }
-    }
+    }  // 输入电流过高，需要拉高输出参考量。
     else{
         i_release_cnt = 0U;
-    }
+    }  // 输入电流正常，正常处理。
 
     if (i_limit_active == 0U){
         IErr1 = IErr0;
@@ -184,7 +176,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
                 i_vref_offset = 0;
             }
         }
-    }
+    }  // 输入电流正常，正常处理。
     else{
         // 电流环路输出= 积分量 + KP*误差量 + KD*当前误差减上次误差
         i0 = I_Integral + IErr0 * ILOOP_KP + (IErr0 - IErr1) * ILOOP_KD;
@@ -209,7 +201,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             i_vref_offset = ILOOP_VREF_OFFSET_LIMIT;
 
         IErr1 = IErr0;
-    }
+    }  // 输入电流过高，需要拉高输出参考量。
 
     if (DF.SMFlag == Rise){ // 判断是否在软启动状态
 
@@ -222,18 +214,18 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         if (CtrValue.Vout_ref < 0){ // 输出参考电压小于0时限制在0
             CtrValue.Vout_ref = 0;
         }
-    }
+    }  // 软启动状态
     else{
         CtrValue.Vout_ref = CtrValue.Vout_ref - i_vref_offset;  // 输出参考电压减去电流环限流偏移
         CVCC_Mode = (i_vref_offset > 0) ? CC : CV;              // 恒流模式
-        if (CtrValue.Vout_ref > CtrValue.Vout_SETref){ // 输出参考电压超过设置电压时限制在设置电压
-            CtrValue.Vout_ref = CtrValue.Vout_SETref; // 限制输出参考电压
-            CVCC_Mode = CV;                           // 恒压模式
+        if (CtrValue.Vout_ref > CtrValue.Vout_SETref){          // 输出参考电压超过设置电压时限制在设置电压
+            CtrValue.Vout_ref = CtrValue.Vout_SETref;           // 限制输出参考电压
+            CVCC_Mode = CV;                                     // 恒压模式
         }
-        if (CtrValue.Vout_ref < 0){ // 输出参考电压小于0时限制在0
+        if (CtrValue.Vout_ref < 0){                             // 输出参考电压小于0时限制在0
             CtrValue.Vout_ref = 0;
         }
-    }
+    }  // 正常状态
 
     VErr0 = CtrValue.Vout_ref - VoutTemp; // 计算电压误差量，当参考电压大于输出电压，占空比增加，输出量增加
 
