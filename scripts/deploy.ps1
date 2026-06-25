@@ -1,6 +1,6 @@
-param(
+﻿param(
     [string]$Kind = "power",
-    [string]$Version = "v1.4.0",
+    [string]$Version = "v1.4.1",
     [string]$Channel = "stable",
     [string]$MinClient = "1.1.0",
     [switch]$SkipSetLatest,
@@ -41,15 +41,10 @@ if ($Channel -eq "beta") {
 else {
     $PublishArgs += @(
         "推荐版发布 $Version",
-        "适用设备：F4CP-POWER / STM32G474CBT6",
-        "优化 Buck/Mix/Boost 模式状态机，使用实际输出电压判定并加入模式回差，降低临界区反复切换",
-        "改进 Buck 到 Mix 的无扰切换，Boost 支路与 PID 种子从当前硬件状态起步，避免理论占空突跳",
-        "为 Mix 区加入独立补偿器初值、专用输出限幅与 anti-windup，避免沿用纯 Boost 状态",
-        "为电压环采样加入轻量 IIR 滤波，并限制 u0/u1 内部状态，减少 ADC 抖动和隐藏积分跑飞",
-        "优化电流环限流状态机，加入 CC/CV 滞回、释放保持时间和更温和的 Vref 拉低/释放步进",
-        "修正软启动流程，输出参考从 0 开始爬升并清零软启动占空计数器，降低启动输入电流过冲",
-        "调整 ADC1 采样时间为 24.5 cycles，并将 PWM 触发采样点固定在周期中点，降低开关噪声耦合",
-        "更新 VIN/VOUT/IOUT 校准参数，改善输入电压、输出电压与输出电流上报和闭环精度",
+        "适用设备：UF4DigitalPower / STM32G474CBT6",
+        "添加风扇转速最大最小千分比定义",
+        "优化风扇转速获取逻辑并添加范围限制",
+        "修正初始化时风扇设置值为最大千分比",
         "发布日期：$ReleaseDate"
     )
 }

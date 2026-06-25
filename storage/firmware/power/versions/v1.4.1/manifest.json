@@ -1,0 +1,38 @@
+{
+  "project": "F4CP",
+  "kind": "Power",
+  "version": "v1.4.1",
+  "device": "STM32G474CBT6",
+  "hardware": "F4CP-G474-Power",
+  "channel": "stable",
+  "date": "2026-06-24",
+  "min_client": "1.1.0",
+  "files": {
+    "bin": {
+      "name": "F4CP-Power-v1.4.1.bin",
+      "download_url": "/api/v1/firmware/power/versions/v1.4.1/download?type=bin",
+      "sha256": "a44b944b8f2a152c306bd3c561fec0602e60ea6ecad2c7caf98ad3b94c21b861",
+      "size": 58276
+    },
+    "hex": {
+      "name": "F4CP-Power-v1.4.1.hex",
+      "download_url": "/api/v1/firmware/power/versions/v1.4.1/download?type=hex",
+      "sha256": "ce05c89ff09384be5f7a3e5742c4b86882d752ffb9a9bdea1eb61a855a97dbd8",
+      "size": 164001
+    }
+  },
+  "burn": {
+    "method": "pyocd",
+    "target": "stm32g474cbtx",
+    "reset_after_download": true
+  },
+  "changelog_url": "/api/v1/firmware/power/versions/v1.4.1/changelog",
+  "notes": [
+    "推荐版发布 v1.4.1",
+    "适用设备：UF4DigitalPower / STM32G474CBT6",
+    "添加风扇转速最大最小千分比定义",
+    "优化风扇转速获取逻辑并添加范围限制",
+    "修正初始化时风扇设置值为最大千分比",
+    "发布日期：2026-06-24"
+  ]
+}

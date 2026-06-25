@@ -25,7 +25,7 @@
 #define CCRAM_BSS __attribute__((section(".ccmram_bss")))
 
 #define ADC_MAX_VALUE 4095.0F				   // ADC最大值
-#define REF_3V3 3.294F						   // VREF参考电压
+#define REF_3V3 3.3F						   // VREF参考电压
 
 #define POWER_CTRL_DEFAULT_SET_VOLTAGE       5.0F   // 默认输出电压
 #define POWER_CTRL_DEFAULT_SET_CURRENT       1.0F   // 默认输出电流
@@ -74,15 +74,15 @@
  */
 #define BSP_POWER_CURRENT_SHUNT_OHM          0.007F // 检流电阻
 #define BSP_POWER_CURRENT_AMP_GAIN           20.0F  // INA240A1放大倍数
-#define BSP_POWER_CURRENT_BIAS_V             1.647F // 中点偏置电压
+#define BSP_POWER_CURRENT_BIAS_V             1.65F // 中点偏置电压
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)  // 每安培对应的采样电压
 
 #define BSP_POWER_IIN_SCALE                  1.0F
 #define BSP_POWER_IOUT_SCALE                 1.0F
 #define BSP_POWER_IIN_GAIN                   BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IIN_SCALE
 #define BSP_POWER_IOUT_GAIN                  BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IOUT_SCALE
-#define BSP_POWER_IIN_ZERO_DEADBAND_A        0.04F  // 输入电流零点死区，抑制空载零点抖动上报
-#define BSP_POWER_IOUT_ZERO_DEADBAND_A       0.04F  // 输出电流零点死区，抑制空载零点抖动上报
+#define BSP_POWER_IIN_ZERO_DEADBAND_A        0.1F  // 输入电流零点死区，抑制空载零点抖动上报
+#define BSP_POWER_IOUT_ZERO_DEADBAND_A       0.1F  // 输出电流零点死区，抑制空载零点抖动上报
 
 // 硬件定时器参数
 #define BSP_POWER_HRTIM_PERIOD_TICK          27200U  // 27200 tick @ 5.44 GHz 等效 HRTIM 时钟

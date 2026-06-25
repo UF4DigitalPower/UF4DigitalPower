@@ -39,11 +39,11 @@ extern "C" {
     /* Exported constants --------------------------------------------------------*/
     /* USER CODE BEGIN EC */
 
-#define NTC_BETA 3380.0     // β值
-#define NTC_R25 10.0        // 25°C时的标称电阻值(kΩ)
-#define NTC_R 6.8         // 串联电阻值(kΩ)
+#define NTC_BETA 3380.0         // β值
+#define NTC_R25 10.0            // 25°C时的标称电阻值(kΩ)
+#define NTC_R 6.8               // 串联电阻值(kΩ)
 #define NTC_VREF 3.3            // 参考电压(V)
-#define ABSOLUTE_ZERO 273.15 // 绝对零度
+#define ABSOLUTE_ZERO 273.15    // 绝对零度
 
 #define TS_CAL1 *((__IO uint16_t *)0x1FFF75A8) // 内部温度传感器在30度和VREF为3V时的校准数据
 #define TS_CAL2 *((__IO uint16_t *)0x1FFF75CA) // 内部温度传感器在130度和VREF为3V时的校准数据
