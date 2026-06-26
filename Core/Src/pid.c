@@ -260,32 +260,6 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         DF.BBModeChange = 0;
     }
 
-    if (g_output_discharge_active != 0U){
-        VErr0 = 0;
-        VErr1 = 0;
-        VErr2 = 0;
-        IErr0 = 0;
-        IErr1 = 0;
-        I_Integral = 0;
-        i_limit_active = 0U;
-        i_release_cnt = 0U;
-        i_vref_offset = 0;
-        i0 = 0;
-        u0 = s_VLoop_DutyMinToLoopLimit(BSP_POWER_BUCK_DUTY_MIN_TICK);
-        u1 = u0;
-        CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
-        CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
-
-        PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
-        PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
-        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
-        PowerControl_HRTIM_SetBuckCompareFast(BSP_POWER_HRTIM_PERIOD_TICK);
-        PowerControl_HRTIM_SetAdcTriggerCompareFast(g_adc_sample_tick);
-        PowerControl_HRTIM_SetBoostCompareFast(BSP_POWER_BOOST_DUTY_MIN_TICK);
-        return;
-    }
-    PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
-
     // 判断工作模式，BUCK，BOOST，BUCK-BOOST
     switch (DF.BBFlag){
         case NA:{// 初始阶段
@@ -312,12 +286,7 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             VErr1 = VErr0;
 
             // 环路输出赋值
-            if (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM){
-                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK; // Buck模式始终关掉Boost支路，避免高压回落时续能
-            }
-            else{
-                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK; // 轻载DCM下关掉Boost同步支路，避免空载环流
-            }
+            CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK; // 继承82c431b3：Buck下保留Boost同步支路，保证降设定时可快速回落
             CtrValue.BuckDuty = (u0 >> 8) * 3;    // 电压环占空比输出
 
             // 环路输出最大最小占空比限制

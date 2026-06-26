@@ -253,8 +253,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     PowerControl_UpdateConductionMode(); // 轻载DCM/重载CCM切换
     StateM();    // 电源状态机函数
     BBMode();    // 运行模式判断
-    PowerControl_UpdateDischargeMode(); // 空载高压降设定时主动泄放
-    PowerControl_ApplyBuckDischargeMode(); // 泄放时只开Buck低边小脉冲
     PowerControl_ApplyBoostConductionMode(); // 慢环应用BOOST同步管启停，避免快环HAL开销
     // 通信后台也在 TIM7 里跑一份，避免输出开启后主循环被快环或 Flash 写入拖住。
     // UF4Transport 内部有初始化和重入保护，TIM7 这里只负责固定节拍驱动。

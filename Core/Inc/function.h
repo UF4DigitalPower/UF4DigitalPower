@@ -111,16 +111,11 @@
 #define BSP_POWER_BUCK_DUTY_BOOST_STEP_TICK  32U
 #define BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK    21760U
 #define BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK   32U
-#define BSP_POWER_BUCK_DISCHARGE_CMP_TICK    1200U
 
 #define BSP_POWER_BOOST_DUTY_MIN_TICK        136U
 #define BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK   1800U
 #define BSP_POWER_BOOST_DUTY_MAX_TICK        17680U
 #define BSP_POWER_BOOST_DUTY_SYNC_MAX_TICK   25568U
-
-#define POWER_CTRL_DISCHARGE_ENTER_MARGIN_ADC 80U
-#define POWER_CTRL_DISCHARGE_EXIT_MARGIN_ADC  16U
-#define POWER_CTRL_DISCHARGE_TARGET_BUCK_RATIO 0.95F
 
 #define MAX_SHORT_I 10.1F   // 短路电流判据
 #define MIN_SHORT_V 0.5F    // 短路电压判据
@@ -264,7 +259,6 @@ extern volatile float MAX_VOUT_OVP_VAL;         // 输出过压保护阈值
 extern volatile float MAX_VOUT_OCP_VAL;         // 输出过流保护阈值
 extern volatile float powerEfficiency;			// 电源转换效率
 extern volatile uint8_t g_boost_conduction_mode; // BOOST轻载DCM/重载CCM模式
-extern volatile uint8_t g_output_discharge_active; // 输出高于目标时主动泄放标志
 
 
 extern volatile uint8_t g_mode_switch_inject_valid;   // 模式切换占空注入有效标志
@@ -335,16 +329,6 @@ UF4_FORCEINLINE void PowerControl_HRTIM_ClearTimerARepFast(void){
     hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].TIMxICR = HRTIM_TIMICR_REPC;
 }
 
-UF4_FORCEINLINE void PowerControl_HRTIM_EnableBuckLowSideDischargeFast(void){
-    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].SETx2R = HRTIM_SET2R_CMP1;
-    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].RSTx2R = HRTIM_RST2R_PER;
-}
-
-UF4_FORCEINLINE void PowerControl_HRTIM_DisableBuckLowSideDischargeFast(void){
-    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].SETx2R = 0U;
-    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].RSTx2R = 0U;
-}
-
 UF4_FORCEINLINE float PowerControl_GetBoostCurrentCompBias(void){
     return (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM) ?
            BSP_POWER_CURRENT_COMP_BIAS_BOOST_CCM_V :
@@ -365,8 +349,6 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
 void PowerControl_DisableOutput(void);
 void PowerControl_UpdateConductionMode(void);
 void PowerControl_ApplyBoostConductionMode(void);
-void PowerControl_UpdateDischargeMode(void);
-void PowerControl_ApplyBuckDischargeMode(void);
 
 void ValInit(void);
 void OTP(void);

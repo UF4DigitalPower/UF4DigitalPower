@@ -85,7 +85,6 @@ volatile float VIN, VOUT, IIN, IOUT;                               // 电压电�
 volatile float Board1_TEMP, Board2_TEMP, CPU_TEMP;                 // 主板和CPU温度实际值
 volatile float powerEfficiency = 0;                                // 电源转换效率
 volatile uint8_t g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_DCM;
-volatile uint8_t g_output_discharge_active = 0U;
 extern volatile int32_t VErr0, VErr1, VErr2; // 电压误差
 extern volatile int32_t u0, u1;              // 电压环输出量
 volatile uint8_t g_mode_switch_inject_valid = 0U;
@@ -171,7 +170,7 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
             buck_duty = s_PowerControl_ClampDutyTick((int32_t)(duty_ratio * BSP_POWER_HRTIM_PERIOD_TICK + 0.5F),
                                                      BSP_POWER_BUCK_DUTY_MIN_TICK,
                                                      CtrValue.BUCKMaxDuty);
-            boost_duty = BSP_POWER_BOOST_DUTY_MIN_TICK;
+            boost_duty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK;
             u_seed = s_PowerControl_DutyTickToLoopSeed(buck_duty);
             break;
 
@@ -407,7 +406,6 @@ void PowerControl_DisableOutput(void){
     DF.BBModeChange = 0;
     CVCC_Mode = CV;
     g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_DCM;
-    g_output_discharge_active = 0U;
 
     CtrValue.Vout_ref = 0;
     CtrValue.Vout_SSref = 0;
@@ -419,7 +417,6 @@ void PowerControl_DisableOutput(void){
 
     PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
     PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
-    PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
 
     PowerControl_HRTIM_SetBuckCompareFast(BSP_POWER_HRTIM_PERIOD_TICK);
     PowerControl_HRTIM_SetAdcTriggerCompareFast(PowerControl_GetAdcSampleTick());
@@ -451,65 +448,6 @@ void PowerControl_UpdateConductionMode(void)
     }
 }
 
-void PowerControl_UpdateDischargeMode(void)
-{
-    uint32_t vin_adc = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VIN_INDEX] * CAL_VIN_K >> 12) + CAL_VIN_B);
-    uint32_t vout_adc = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
-    uint32_t target_ref = (uint32_t)CtrValue.Vout_SETref;
-
-    if (DF.SMFlag == Rise && CtrValue.Vout_SSref > 0){
-        target_ref = (uint32_t)CtrValue.Vout_SSref;
-    }
-
-    if (DF.PWMENFlag == 0U || DF.OUTPUT_Flag == 0U || target_ref == 0U ||
-        vin_adc == 0U || target_ref >= (uint32_t)((float)vin_adc * POWER_CTRL_DISCHARGE_TARGET_BUCK_RATIO)){
-        g_output_discharge_active = 0U;
-        return;
-    }
-
-    if (g_output_discharge_active != 0U){
-        if (vout_adc <= (target_ref + POWER_CTRL_DISCHARGE_EXIT_MARGIN_ADC)){
-            g_output_discharge_active = 0U;
-        }
-    }
-    else{
-        if (vout_adc > (target_ref + POWER_CTRL_DISCHARGE_ENTER_MARGIN_ADC)){
-            g_output_discharge_active = 1U;
-        }
-    }
-}
-
-void PowerControl_ApplyBuckDischargeMode(void)
-{
-    static uint8_t last_pwm_en = 0xFFU;
-    static uint8_t last_output_en = 0xFFU;
-    static uint8_t last_discharge = 0xFFU;
-
-    if (last_pwm_en == DF.PWMENFlag &&
-        last_output_en == DF.OUTPUT_Flag &&
-        last_discharge == g_output_discharge_active){
-        return;
-    }
-
-    if (DF.PWMENFlag != 0U && DF.OUTPUT_Flag != 0U){
-        if (g_output_discharge_active != 0U){
-            PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
-            PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
-        }
-        else{
-            PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
-            PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
-        }
-    }
-    else{
-        PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
-    }
-
-    last_pwm_en = DF.PWMENFlag;
-    last_output_en = DF.OUTPUT_Flag;
-    last_discharge = g_output_discharge_active;
-}
-
 void PowerControl_ApplyBoostConductionMode(void)
 {
     static uint8_t last_pwm_en = 0xFFU;
@@ -519,14 +457,15 @@ void PowerControl_ApplyBoostConductionMode(void)
     static uint32_t last_target_outputs = 0xFFFFFFFFU;
     uint32_t target_outputs = 0U;
 
-    if (g_output_discharge_active == 0U &&
-        DF.PWMENFlag != 0U && DF.OUTPUT_Flag != 0U &&
-        (DF.BBFlag == Boost || DF.BBFlag == Mix)){
+    if (DF.PWMENFlag != 0U && DF.OUTPUT_Flag != 0U){
         if (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM){
             target_outputs = HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2;
         }
-        else{
+        else if (DF.BBFlag == Boost || DF.BBFlag == Mix){
             target_outputs = HRTIM_OUTPUT_TD1;
+        }
+        else{
+            target_outputs = HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2;
         }
     }
 
