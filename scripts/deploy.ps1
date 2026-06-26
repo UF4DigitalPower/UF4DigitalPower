@@ -1,6 +1,6 @@
 ﻿param(
     [string]$Kind = "power",
-    [string]$Version = "v1.4.1",
+    [string]$Version = "v1.4.2",
     [string]$Channel = "stable",
     [string]$MinClient = "1.1.0",
     [switch]$SkipSetLatest,
@@ -42,9 +42,10 @@ else {
     $PublishArgs += @(
         "推荐版发布 $Version",
         "适用设备：UF4DigitalPower / STM32G474CBT6",
-        "添加风扇转速最大最小千分比定义",
-        "优化风扇转速获取逻辑并添加范围限制",
-        "修正初始化时风扇设置值为最大千分比",
+        "恢复 BUCK 区域快速降压切换，避免高压切低压时仅依赖自然泄放",
+        "优化 BUCK/BOOST 模式切换预置占空比与 TD 同步导通状态",
+        "保留 BOOST DCM/CCM 电流零点补偿，降低轻载与重载采样偏差",
+        "优化快环控制路径和高频函数内联，降低控制中断开销",
         "发布日期：$ReleaseDate"
     )
 }
