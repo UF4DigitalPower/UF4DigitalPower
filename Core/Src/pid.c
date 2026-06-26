@@ -17,7 +17,6 @@
 #include "stdint.h"
 #include "pid.h"
 #include "function.h"
-#include "hrtim.h"
 
 extern volatile uint16_t ADC1_RESULT[4];                                 // ADC1 DMA采样结果：Vout, Iout, Vin, Iin
 CCRAM volatile int32_t VErr0 = 0, VErr1 = 0, VErr2 = 0;                  // 电压误差
@@ -31,15 +30,15 @@ static CCRAM int32_t s_vout_pid_filter = 0;                              // 电�
 static CCRAM uint8_t s_vout_pid_filter_valid = 0U;                       // 电压环积分量滤波量是否有效
 
 
-__STATIC_FORCEINLINE int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick){  // 获取电压环输出最小值
+UF4_FORCEINLINE int32_t s_VLoop_DutyMinToLoopLimit(int16_t duty_tick){  // 获取电压环输出最小值
     return ((((int32_t)duty_tick + 2) / 3) << 8);
 }
 
-__STATIC_FORCEINLINE int32_t s_VLoop_DutyMaxToLoopLimit(int16_t duty_tick){  // 获取电压环输出最大值
+UF4_FORCEINLINE int32_t s_VLoop_DutyMaxToLoopLimit(int16_t duty_tick){  // 获取电压环输出最大值
     return (((int32_t)duty_tick / 3) << 8);
 }
 
-__STATIC_FORCEINLINE void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max_duty)  // 限制电压环输出
+UF4_FORCEINLINE void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max_duty)  // 限制电压环输出
 {
     int32_t min_u = s_VLoop_DutyMinToLoopLimit(min_duty);
     int32_t max_u = s_VLoop_DutyMaxToLoopLimit(max_duty);
@@ -56,7 +55,7 @@ __STATIC_FORCEINLINE void s_VLoop_ClampOutputState(int16_t min_duty, int16_t max
     u1 = u0;
 }
 
-__STATIC_FORCEINLINE int16_t s_VLoop_GetMixBoostDutyMax(void)
+UF4_FORCEINLINE int16_t s_VLoop_GetMixBoostDutyMax(void)
 {
     int16_t max_duty = MIX_VLOOP_BOOST_DUTY_MAX_TICK;
 
@@ -69,7 +68,7 @@ __STATIC_FORCEINLINE int16_t s_VLoop_GetMixBoostDutyMax(void)
     return max_duty;
 }
 
-__STATIC_FORCEINLINE uint16_t s_PowerControl_ClampAdcSampleTick(uint16_t tick)
+UF4_FORCEINLINE uint16_t s_PowerControl_ClampAdcSampleTick(uint16_t tick)
 {
     if (tick < ADC_SAMPLE_TICK_MIN){
         return ADC_SAMPLE_TICK_MIN;
@@ -85,7 +84,7 @@ void PowerControl_SetAdcSampleTick(uint16_t tick)
     g_adc_sample_tick = s_PowerControl_ClampAdcSampleTick(tick);
 }
 
-uint16_t PowerControl_GetAdcSampleTick(void)
+RAMFUNC uint16_t PowerControl_GetAdcSampleTick(void)
 {
     return s_PowerControl_ClampAdcSampleTick(g_adc_sample_tick);
 }
@@ -232,10 +231,11 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
     // 当模式切换时，降低占空比，确保模式切换不过冲
     // BBModeChange为模式切换为，不同模式切换时，该位会被置1
     if (DF.BBModeChange){
+        int32_t switch_v_err = CtrValue.Vout_ref - VoutRaw;
         u1 = 0;
-        VErr1 = 0;
-        VErr2 = 0;
-        VErr0 = 0;
+        VErr0 = switch_v_err;
+        VErr1 = switch_v_err;
+        VErr2 = switch_v_err;
         I_Integral = 0;
         i_limit_active = 0U;
         i_release_cnt = 0U;
@@ -259,6 +259,32 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
         }
         DF.BBModeChange = 0;
     }
+
+    if (g_output_discharge_active != 0U){
+        VErr0 = 0;
+        VErr1 = 0;
+        VErr2 = 0;
+        IErr0 = 0;
+        IErr1 = 0;
+        I_Integral = 0;
+        i_limit_active = 0U;
+        i_release_cnt = 0U;
+        i_vref_offset = 0;
+        i0 = 0;
+        u0 = s_VLoop_DutyMinToLoopLimit(BSP_POWER_BUCK_DUTY_MIN_TICK);
+        u1 = u0;
+        CtrValue.BuckDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
+        CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
+
+        PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
+        PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+        PowerControl_HRTIM_SetBuckCompareFast(BSP_POWER_HRTIM_PERIOD_TICK);
+        PowerControl_HRTIM_SetAdcTriggerCompareFast(g_adc_sample_tick);
+        PowerControl_HRTIM_SetBoostCompareFast(BSP_POWER_BOOST_DUTY_MIN_TICK);
+        return;
+    }
+    PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
 
     // 判断工作模式，BUCK，BOOST，BUCK-BOOST
     switch (DF.BBFlag){
@@ -286,7 +312,12 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
             VErr1 = VErr0;
 
             // 环路输出赋值
-            CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK; // 参考示例工程，Buck模式下Boost支路保持同步整流安全占空
+            if (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM){
+                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK; // Buck模式始终关掉Boost支路，避免高压回落时续能
+            }
+            else{
+                CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK; // 轻载DCM下关掉Boost同步支路，避免空载环流
+            }
             CtrValue.BuckDuty = (u0 >> 8) * 3;    // 电压环占空比输出
 
             // 环路输出最大最小占空比限制
@@ -388,9 +419,9 @@ RAMFUNC void BuckBoostVILoopCtlPID(void){
 
     // 更新对应寄存器
     // buck占空比
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK - CtrValue.BuckDuty);
+    PowerControl_HRTIM_SetBuckCompareFast(BSP_POWER_HRTIM_PERIOD_TICK - CtrValue.BuckDuty);
     // ADC触发采样点：Timer A CMP3 触发 HRTIM_TRG1，可运行时调节以避开开关噪声。
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, PowerControl_GetAdcSampleTick());
+    PowerControl_HRTIM_SetAdcTriggerCompareFast(g_adc_sample_tick);
     // Boost占空比
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, CtrValue.BoostDuty);
+    PowerControl_HRTIM_SetBoostCompareFast(CtrValue.BoostDuty);
 }

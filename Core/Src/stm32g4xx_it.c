@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "pid.h"
+#include "function.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -368,14 +369,14 @@ void TIM7_DAC_IRQHandler(void)
 /**
   * @brief This function handles HRTIM timer A global interrupt.
   */
-void HRTIM1_TIMA_IRQHandler(void)
+RAMFUNC void HRTIM1_TIMA_IRQHandler(void)
 {
   /* USER CODE BEGIN HRTIM1_TIMA_IRQn 0 */
   /* 这里只启用了 Timer A REP 中断，直接判标志并清中断，
      避免 200 kHz 快环每次都走 HAL 的通用 HRTIM 分发路径。 */
-  if (__HAL_HRTIM_TIMER_GET_ITSTATUS(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP) != RESET)
+  if (PowerControl_HRTIM_TimerARepPendingFast() != 0U)
   {
-    __HAL_HRTIM_TIMER_CLEAR_IT(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_TIM_IT_REP);
+    PowerControl_HRTIM_ClearTimerARepFast();
     BuckBoostVILoopCtlPID();
   }
   /* USER CODE END HRTIM1_TIMA_IRQn 0 */

@@ -33,9 +33,10 @@
 #define MIXPIDb1 -13060
 #define MIXPIDb2 6429
 
-#define ILOOP_KP 2 // 电流环PID补偿器P值
-#define ILOOP_KI 1 // 电流环PID补偿器I值
-#define ILOOP_KD 0 // 电流环PID补偿器D值
+#define ILOOP_KP 6 // 电流环PID补偿器P值
+#define ILOOP_KI 2 // 电流环PID补偿器I值
+#define ILOOP_KD 1 // 电流环PID补偿器D值
+
 #define ILOOP_VREF_STEP_LIMIT 8         // 单次电流环调节输出参考的最大ADC码
 #define ILOOP_INTEGRAL_LIMIT 2048       // 电流环积分限幅，避免过流后深度积分啸叫
 #define ILOOP_VREF_OFFSET_LIMIT 2048    // 限流时允许累计拉低输出参考的最大ADC码
@@ -46,7 +47,7 @@
 
 #define VLOOP_ADC_FILTER_SHIFT 2U                                                             // 电压环积分量滤波系数
 #define MIX_VLOOP_BOOST_DUTY_MAX_TICK ((int16_t)((BSP_POWER_BOOST_DUTY_MAX_TICK * 3U) / 4U))  // 混合模式下，buck的输出占空比最大值
-#define ADC_SAMPLE_TICK_DEFAULT (int16_t)(BSP_POWER_HRTIM_PERIOD_TICK * 0.6)                  // 默认ADC采样时间
+#define ADC_SAMPLE_TICK_DEFAULT (int16_t)(BSP_POWER_HRTIM_PERIOD_TICK * 0.7)                  // 默认ADC采样时间
 #define ADC_SAMPLE_TICK_MARGIN  680U                                                          // 默认ADC采样时间边沿
 #define ADC_SAMPLE_TICK_MIN     ADC_SAMPLE_TICK_MARGIN                                        // 默认ADC采样时间最大
 #define ADC_SAMPLE_TICK_MAX     (BSP_POWER_HRTIM_PERIOD_TICK - ADC_SAMPLE_TICK_MARGIN)        // 默认ADC采样时间最大

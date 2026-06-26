@@ -84,6 +84,8 @@ SState_M STState = SSInit; // 软启动状态标志
 volatile float VIN, VOUT, IIN, IOUT;                               // 电压电流实际值
 volatile float Board1_TEMP, Board2_TEMP, CPU_TEMP;                 // 主板和CPU温度实际值
 volatile float powerEfficiency = 0;                                // 电源转换效率
+volatile uint8_t g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_DCM;
+volatile uint8_t g_output_discharge_active = 0U;
 extern volatile int32_t VErr0, VErr1, VErr2; // 电压误差
 extern volatile int32_t u0, u1;              // 电压环输出量
 volatile uint8_t g_mode_switch_inject_valid = 0U;
@@ -113,7 +115,7 @@ static int32_t s_PowerControl_DutyTickToLoopSeed(int16_t duty_tick)
     return (((int32_t)duty_tick / 3) << 8);
 }
 
-__STATIC_FORCEINLINE float DynamicIIR(float raw, float *filt)
+UF4_FORCEINLINE float DynamicIIR(float raw, float *filt)
 {
     float err = fabsf(raw - *filt);
 
@@ -169,7 +171,7 @@ void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t 
             buck_duty = s_PowerControl_ClampDutyTick((int32_t)(duty_ratio * BSP_POWER_HRTIM_PERIOD_TICK + 0.5F),
                                                      BSP_POWER_BUCK_DUTY_MIN_TICK,
                                                      CtrValue.BUCKMaxDuty);
-            boost_duty = BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK;
+            boost_duty = BSP_POWER_BOOST_DUTY_MIN_TICK;
             u_seed = s_PowerControl_DutyTickToLoopSeed(buck_duty);
             break;
 
@@ -242,8 +244,10 @@ RAMFUNC void ADCSample(void){
  * @brief BOOST电流零点校准
  *
  */
-__STATIC_FORCEINLINE float ADC_BOOST_IOUT_CurZeroCal(void)
+UF4_FORCEINLINE float ADC_BOOST_IOUT_CurZeroCal(void)
 {
+    float comp_bias = PowerControl_GetBoostCurrentCompBias();
+
     switch (DF.BBFlag) {
         case Buck:
             return (BSP_POWER_CURRENT_BIAS_V -
@@ -252,7 +256,7 @@ __STATIC_FORCEINLINE float ADC_BOOST_IOUT_CurZeroCal(void)
 
         case Boost:
         case Mix:
-            return (BSP_POWER_CURRENT_COMP_BIAS_V -
+            return (comp_bias -
                     SADC.IoutAvg * REF_3V3 / ADC_MAX_VALUE)
                    / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
@@ -261,8 +265,10 @@ __STATIC_FORCEINLINE float ADC_BOOST_IOUT_CurZeroCal(void)
     }
 }
 
-__STATIC_FORCEINLINE float ADC_BOOST_IIN_CurZeroCal(void)
+UF4_FORCEINLINE float ADC_BOOST_IIN_CurZeroCal(void)
 {
+    float comp_bias = PowerControl_GetBoostCurrentCompBias();
+
     switch (DF.BBFlag) {
         case Buck:
             return (BSP_POWER_CURRENT_BIAS_V -
@@ -271,7 +277,7 @@ __STATIC_FORCEINLINE float ADC_BOOST_IIN_CurZeroCal(void)
 
         case Boost:
         case Mix:
-            return (BSP_POWER_CURRENT_COMP_BIAS_V -
+            return (comp_bias -
                     SADC.Iin * REF_3V3 / ADC_MAX_VALUE)
                    / BSP_POWER_CURRENT_SENSE_V_PER_A;
 
@@ -360,8 +366,8 @@ void StateMInit(void){
 void ValInit(void){
     DF.PWMENFlag = 0;    // 关闭PWM
 
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
+    PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+    PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
 
     DF.BBFlag = NA;
     DF.ErrFlag = 0;    // 清除故障标志位
@@ -400,6 +406,8 @@ void PowerControl_DisableOutput(void){
     DF.BBFlag = NA;
     DF.BBModeChange = 0;
     CVCC_Mode = CV;
+    g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_DCM;
+    g_output_discharge_active = 0U;
 
     CtrValue.Vout_ref = 0;
     CtrValue.Vout_SSref = 0;
@@ -409,12 +417,143 @@ void PowerControl_DisableOutput(void){
     CtrValue.BoostDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
     CtrValue.BoostMaxDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
 
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
-    HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+    PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
+    PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+    PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
 
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK);
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_3, PowerControl_GetAdcSampleTick());
-    __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, BSP_POWER_BOOST_DUTY_MIN_TICK);
+    PowerControl_HRTIM_SetBuckCompareFast(BSP_POWER_HRTIM_PERIOD_TICK);
+    PowerControl_HRTIM_SetAdcTriggerCompareFast(PowerControl_GetAdcSampleTick());
+    PowerControl_HRTIM_SetBoostCompareFast(BSP_POWER_BOOST_DUTY_MIN_TICK);
+}
+
+void PowerControl_UpdateConductionMode(void)
+{
+    float load_current = IOUT;
+
+    if (load_current < 0.0F){
+        load_current = 0.0F;
+    }
+
+    if (DF.PWMENFlag == 0U || DF.OUTPUT_Flag == 0U || DF.SMFlag != Run){
+        g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_DCM;
+        return;
+    }
+
+    if (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM){
+        if (load_current <= BSP_POWER_DCM_ENTER_CURRENT_A){
+            g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_DCM;
+        }
+    }
+    else{
+        if (load_current >= BSP_POWER_CCM_ENTER_CURRENT_A){
+            g_boost_conduction_mode = BSP_POWER_CONDUCTION_MODE_CCM;
+        }
+    }
+}
+
+void PowerControl_UpdateDischargeMode(void)
+{
+    uint32_t vin_adc = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VIN_INDEX] * CAL_VIN_K >> 12) + CAL_VIN_B);
+    uint32_t vout_adc = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B);
+    uint32_t target_ref = (uint32_t)CtrValue.Vout_SETref;
+
+    if (DF.SMFlag == Rise && CtrValue.Vout_SSref > 0){
+        target_ref = (uint32_t)CtrValue.Vout_SSref;
+    }
+
+    if (DF.PWMENFlag == 0U || DF.OUTPUT_Flag == 0U || target_ref == 0U ||
+        vin_adc == 0U || target_ref >= (uint32_t)((float)vin_adc * POWER_CTRL_DISCHARGE_TARGET_BUCK_RATIO)){
+        g_output_discharge_active = 0U;
+        return;
+    }
+
+    if (g_output_discharge_active != 0U){
+        if (vout_adc <= (target_ref + POWER_CTRL_DISCHARGE_EXIT_MARGIN_ADC)){
+            g_output_discharge_active = 0U;
+        }
+    }
+    else{
+        if (vout_adc > (target_ref + POWER_CTRL_DISCHARGE_ENTER_MARGIN_ADC)){
+            g_output_discharge_active = 1U;
+        }
+    }
+}
+
+void PowerControl_ApplyBuckDischargeMode(void)
+{
+    static uint8_t last_pwm_en = 0xFFU;
+    static uint8_t last_output_en = 0xFFU;
+    static uint8_t last_discharge = 0xFFU;
+
+    if (last_pwm_en == DF.PWMENFlag &&
+        last_output_en == DF.OUTPUT_Flag &&
+        last_discharge == g_output_discharge_active){
+        return;
+    }
+
+    if (DF.PWMENFlag != 0U && DF.OUTPUT_Flag != 0U){
+        if (g_output_discharge_active != 0U){
+            PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
+            PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
+        }
+        else{
+            PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
+            PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);
+        }
+    }
+    else{
+        PowerControl_HRTIM_DisableBuckLowSideDischargeFast();
+    }
+
+    last_pwm_en = DF.PWMENFlag;
+    last_output_en = DF.OUTPUT_Flag;
+    last_discharge = g_output_discharge_active;
+}
+
+void PowerControl_ApplyBoostConductionMode(void)
+{
+    static uint8_t last_pwm_en = 0xFFU;
+    static uint8_t last_output_en = 0xFFU;
+    static uint8_t last_bb_mode = 0xFFU;
+    static uint8_t last_conduction_mode = 0xFFU;
+    static uint32_t last_target_outputs = 0xFFFFFFFFU;
+    uint32_t target_outputs = 0U;
+
+    if (g_output_discharge_active == 0U &&
+        DF.PWMENFlag != 0U && DF.OUTPUT_Flag != 0U &&
+        (DF.BBFlag == Boost || DF.BBFlag == Mix)){
+        if (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM){
+            target_outputs = HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2;
+        }
+        else{
+            target_outputs = HRTIM_OUTPUT_TD1;
+        }
+    }
+
+    if (last_pwm_en == DF.PWMENFlag &&
+        last_output_en == DF.OUTPUT_Flag &&
+        last_bb_mode == DF.BBFlag &&
+        last_conduction_mode == g_boost_conduction_mode &&
+        last_target_outputs == target_outputs){
+        return;
+    }
+
+    if (target_outputs == (HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2)){
+        PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+    }
+    else if (target_outputs == HRTIM_OUTPUT_TD1){
+        PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TD1);
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD2);
+    }
+    else{
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);
+    }
+
+    last_pwm_en = DF.PWMENFlag;
+    last_output_en = DF.OUTPUT_Flag;
+    last_bb_mode = DF.BBFlag;
+    last_conduction_mode = g_boost_conduction_mode;
+    last_target_outputs = target_outputs;
 }
 
 /**
@@ -460,8 +599,8 @@ void StateMRise(void){
     switch (STState){            // 判断软启状态
     case SSInit: {               // 初始化状态
         DF.PWMENFlag = 0;        // 关闭PWM
-        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
         // 软启中将运行限制占空比启动，从最小占空比开始启动
         CtrValue.BUCKMaxDuty = BSP_POWER_BUCK_DUTY_MIN_TICK;
         CtrValue.BoostMaxDuty = BSP_POWER_BOOST_DUTY_MIN_TICK;
@@ -518,10 +657,10 @@ void StateMRise(void){
             VErr2 = 0;
             u0 = 0;
             u1 = 0;
-            __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_A, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK); // BUCK电路下管占空比拉满
-            __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_TIMER_D, HRTIM_COMPAREUNIT_1, BSP_POWER_HRTIM_PERIOD_TICK); // BOOST电路下管占空比拉满
-            HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);           // 开启HRTIM的PWM输出
-            HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);           // 开启HRTIM的PWM输出
+            PowerControl_HRTIM_SetBuckCompareFast(BSP_POWER_HRTIM_PERIOD_TICK); // BUCK电路下管占空比拉满
+            PowerControl_HRTIM_SetBoostCompareFast(BSP_POWER_HRTIM_PERIOD_TICK); // BOOST电路下管占空比拉满
+            PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2);           // 开启HRTIM的PWM输出
+            PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2);           // 开启HRTIM的PWM输出
         } // 发波标志位置位
         DF.PWMENFlag = 1; // 最大占空比限制逐渐增加
         if (CtrValue.Vout_SSref < CtrValue.Vout_SETref){
@@ -564,8 +703,8 @@ void ShortOff(void){
     if (Iout > POWER_CTRL_SHORT_CURRENT && Vout < POWER_CTRL_SHORT_VOLTAGE){
         DF.PWMENFlag = 0; // 关闭PWM
 
-        HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 开启HRTIM的PWM输出
-        HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 开启HRTIM的PWM输出
+        PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 开启HRTIM的PWM输出
+        PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 开启HRTIM的PWM输出
 
         setRegBits(DF.ErrFlag, F_SW_SHORT);        // 故障标志位
         DF.SMFlag = Err;        // 跳转至故障状态
@@ -581,8 +720,8 @@ void ShortOff(void){
             if (RSNum > 10){ // 确保不清除故障，不重启
                 RSNum = 11;
                 DF.PWMENFlag = 0;   // 关闭PWM
-                HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 开启HRTIM的PWM输出
-                HAL_HRTIM_WaveformOutputStart(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 开启HRTIM的PWM输出
+                PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 开启HRTIM的PWM输出
+                PowerControl_HRTIM_OutputStartFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 开启HRTIM的PWM输出
             }
             else{
                 RSNum++;    // 短路重启计数器累加
@@ -607,8 +746,8 @@ void OVP(void){
         if (OVPCnt > 2){ // 条件保持10ms
             OVPCnt = 0;       // 计时器清零
             DF.PWMENFlag = 0; // 关闭PWM
-            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
+            PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+            PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
             setRegBits(DF.ErrFlag, F_SW_VOUT_OVP);// 故障标志位
             DF.SMFlag = Err;// 跳转至故障状态
         }
@@ -635,8 +774,8 @@ void OCP(void){
         if (OCPCnt > 10){ // 条件保持50ms，则认为过流发生
             OCPCnt = 0;// 计数器清0
             DF.PWMENFlag = 0; // 关闭PWM
-            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-            HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
+            PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+            PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
             setRegBits(DF.ErrFlag, F_SW_IOUT_OCP); // 故障标志位
             DF.SMFlag = Err;  // 跳转至故障状态
         }
@@ -657,8 +796,8 @@ void OCP(void){
             if (RSNum > 10){// 过流重启只重启10次，10次后不重启（严重故障）
                 RSNum = 11;// 确保不清除故障，不重启
                 DF.PWMENFlag = 0;// 关闭PWM
-                HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-                HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
+                PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+                PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
             }
             else{
                 // 清除过流保护故障标志位
@@ -674,14 +813,37 @@ void OCP(void){
  * 函数需放5ms中断里执行。
  */
 void OTP(void){
-    const float TEMP1 = GET_NTC1_Temperature(); // 获取NTC1温度值
-    const float TEMP2 = GET_NTC2_Temperature(); // 获取NTC2温度值
+    static uint8_t otp_over_count = 0U;
+    const float TEMP1 = Board1_TEMP;
+    const float TEMP2 = Board2_TEMP;
+    const uint8_t temp_valid = (TEMP1 > -40.0F && TEMP1 < 150.0F &&
+                                TEMP2 > -40.0F && TEMP2 < 150.0F) ? 1U : 0U;
+
+    if (temp_valid == 0U){
+        otp_over_count = 0U;
+        return;
+    }
+
     if (TEMP1 >= MAX_OTP_VAL || TEMP2 >= MAX_OTP_VAL){
+        if (otp_over_count < POWER_CTRL_OTP_CONFIRM_COUNT){
+            otp_over_count++;
+        }
+    }
+    else{
+        otp_over_count = 0U;
+        if (getRegBits(DF.ErrFlag, F_OTP) &&
+            TEMP1 <= (MAX_OTP_VAL - POWER_CTRL_OTP_CLEAR_HYSTERESIS_C) &&
+            TEMP2 <= (MAX_OTP_VAL - POWER_CTRL_OTP_CLEAR_HYSTERESIS_C)){
+            clrRegBits(DF.ErrFlag, F_OTP);
+        }
+    }
+
+    if (otp_over_count >= POWER_CTRL_OTP_CONFIRM_COUNT){
 
         DF.SMFlag = Wait;
         DF.PWMENFlag = 0;      // 关闭PWM
-        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
-        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TA1 | HRTIM_OUTPUT_TA2); // 关闭BUCK电路的PWM输出
+        PowerControl_HRTIM_OutputStopFast(HRTIM_OUTPUT_TD1 | HRTIM_OUTPUT_TD2); // 关闭BOOST电路的PWM输出
         setRegBits(DF.ErrFlag, F_OTP);                                               // 故障标志位
         DF.SMFlag = Err;                                                             // 跳转至故障状态
         FAN_PWM_set(POWER_CTRL_FAN_MAX_RUN_DUTY);                          // 风扇散热
@@ -698,8 +860,9 @@ RAMFUNC void BBMode(void){
     uint8_t PreBBFlag = 0;// 上一次模式状态量
     PreBBFlag = DF.BBFlag;// 暂存当前的模式状态量
 
-    uint32_t VIN_ADC = ADC1_RESULT[ADC1_RESULT_VIN_INDEX]; // 输入电压ADC采样值
+    uint32_t VIN_ADC = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VIN_INDEX] * CAL_VIN_K >> 12) + CAL_VIN_B); // 输入电压ADC校正值
     uint32_t VOUT_ADC = (uint32_t)((ADC1_RESULT[ADC1_RESULT_VOUT_INDEX] * CAL_VOUT_K >> 12) + CAL_VOUT_B); // 输出电压ADC校正值
+    uint32_t MODE_VOUT_ADC = VOUT_ADC;
     static uint32_t VIN_MODE_REF = 0;
 
     // 对输入电压ADC采样值累计取平均值
@@ -707,7 +870,7 @@ RAMFUNC void BBMode(void){
     static uint8_t VIN_ADC_Count = 0;
 
     if (VIN_ADC_Count < 5){
-        VIN_ADC_SUM += ADC1_RESULT[ADC1_RESULT_VIN_INDEX];
+        VIN_ADC_SUM += VIN_ADC;
         VIN_ADC_Count++;
     }
     if (VIN_ADC_Count == 5){
@@ -733,13 +896,20 @@ RAMFUNC void BBMode(void){
         return;
     }
 
+    if (DF.SMFlag == Rise && CtrValue.Vout_SSref > 0){
+        MODE_VOUT_ADC = (uint32_t)CtrValue.Vout_SSref;
+    }
+    else if (CtrValue.Vout_SETref > 0){
+        MODE_VOUT_ADC = (uint32_t)CtrValue.Vout_SETref;
+    }
+
     // 判断当前模块的工作模式
     switch (DF.BBFlag){
         // NA-初始化模式
         case NA:{
-            if (VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
+            if (MODE_VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
                 DF.BBFlag = Buck;                          // 切换到buck模式
-            else if (VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
+            else if (MODE_VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
                 DF.BBFlag = Boost;                         // 切换到boost模式
             else
                 DF.BBFlag = Mix; // buck-boost（MIX） mode
@@ -747,25 +917,25 @@ RAMFUNC void BBMode(void){
         }
         // BUCK模式
         case Buck:{
-            if (VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
+            if (MODE_VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
                 DF.BBFlag = Boost;                          // boost mode
-            else if (VOUT_ADC > VIN_MODE_REF * BB_MODE_BUCK_TO_MIX_RATIO)
+            else if (MODE_VOUT_ADC > VIN_MODE_REF * BB_MODE_BUCK_TO_MIX_RATIO)
                 DF.BBFlag = Mix;                            // buck-boost（MIX） mode
             break;
         }
         // Boost模式
         case Boost:{
-            if (VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
+            if (MODE_VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
                 DF.BBFlag = Buck;                           // buck mode
-            else if (VOUT_ADC < VIN_MODE_REF * BB_MODE_BOOST_TO_MIX_RATIO)
+            else if (MODE_VOUT_ADC < VIN_MODE_REF * BB_MODE_BOOST_TO_MIX_RATIO)
                 DF.BBFlag = Mix;                            // buck-boost（MIX） mode
             break;
         }
         // Mix模式
         case Mix:{
-            if (VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
+            if (MODE_VOUT_ADC < VIN_MODE_REF * BB_MODE_MIX_TO_BUCK_RATIO)
                 DF.BBFlag = Buck;                          // buck mode
-            else if (VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
+            else if (MODE_VOUT_ADC > VIN_MODE_REF * BB_MODE_MIX_TO_BOOST_RATIO)
                 DF.BBFlag = Boost;                         // boost mode
             break;
         }
@@ -775,7 +945,7 @@ RAMFUNC void BBMode(void){
     if (PreBBFlag == DF.BBFlag)
         DF.BBModeChange = 0;
     else{
-        PowerControl_PrepareModeSwitch((BB_M)DF.BBFlag, VIN_ADC, (int32_t)VOUT_ADC);
+        PowerControl_PrepareModeSwitch((BB_M)DF.BBFlag, VIN_ADC, (int32_t)MODE_VOUT_ADC);
         DF.BBModeChange = 1;
     }
 }

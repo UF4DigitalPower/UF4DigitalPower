@@ -19,10 +19,19 @@
 #ifndef FUNCTION1_H
 #define FUNCTION1_H
 #include "stdint.h"
+#include "hrtim.h"
 
 #define RAMFUNC __attribute__((section(".RamFunc")))
 #define CCRAM __attribute__((section(".ccmram_bss")))
 #define CCRAM_BSS __attribute__((section(".ccmram_bss")))
+
+#ifndef UF4_FORCEINLINE
+#if defined(__GNUC__)
+#define UF4_FORCEINLINE static inline __attribute__((always_inline))
+#else
+#define UF4_FORCEINLINE static inline
+#endif
+#endif
 
 #define ADC_MAX_VALUE 4095.0F				   // ADC最大值
 #define REF_3V3 3.3F						   // VREF参考电压
@@ -32,6 +41,8 @@
 #define POWER_CTRL_DEFAULT_OTP_SET           80.0F  // 默认OTP值
 #define POWER_CTRL_DEFAULT_OVP_SET           46.0F  // 默认过压值 45v
 #define POWER_CTRL_DEFAULT_OCP_SET           11.1F  // 默认过流值 10A
+#define POWER_CTRL_OTP_CONFIRM_COUNT         10U    // 5ms周期下连续50ms超温才置位
+#define POWER_CTRL_OTP_CLEAR_HYSTERESIS_C    5.0F   // 低于阈值5度后允许清除OTP
 
 #define POWER_CTRL_FAN_MIN_RUN_DUTY          5U     // 风扇非零运行时的最小占空比
 #define POWER_CTRL_FAN_MAX_RUN_DUTY          95U    // 风扇运行时的最大安全占空比
@@ -75,7 +86,8 @@
 #define BSP_POWER_CURRENT_SHUNT_OHM          0.007F // 检流电阻
 #define BSP_POWER_CURRENT_AMP_GAIN           20.0F  // INA240A1放大倍数
 #define BSP_POWER_CURRENT_BIAS_V             1.65F  // 中点偏置电压
-#define BSP_POWER_CURRENT_COMP_BIAS_V        1.63F  // 硬件BUG 使用BOOST 动态补偿
+#define BSP_POWER_CURRENT_COMP_BIAS_BOOST_DCM_V   1.63F   // BOOST轻载/DCM补偿偏置
+#define BSP_POWER_CURRENT_COMP_BIAS_BOOST_CCM_V   1.622F  // BOOST重载/CCM补偿偏置，避免电流显示被过度抬高
 
 #define BSP_POWER_CURRENT_SENSE_V_PER_A      (BSP_POWER_CURRENT_SHUNT_OHM * BSP_POWER_CURRENT_AMP_GAIN)  // 每安培对应的采样电压
 
@@ -85,6 +97,11 @@
 #define BSP_POWER_IOUT_GAIN                  BSP_POWER_CURRENT_AMP_GAIN * BSP_POWER_IOUT_SCALE
 #define BSP_POWER_IIN_ZERO_DEADBAND_A        0.1F  // 输入电流零点死区，抑制空载零点抖动上报
 #define BSP_POWER_IOUT_ZERO_DEADBAND_A       0.1F  // 输出电流零点死区，抑制空载零点抖动上报
+#define BSP_POWER_DCM_ENTER_CURRENT_A        2.8F  // 3A中心，低于该值进入轻载DCM
+#define BSP_POWER_CCM_ENTER_CURRENT_A        3.2F  // 3A中心，高于该值进入重载CCM
+
+#define BSP_POWER_CONDUCTION_MODE_DCM        0U
+#define BSP_POWER_CONDUCTION_MODE_CCM        1U
 
 // 硬件定时器参数
 #define BSP_POWER_HRTIM_PERIOD_TICK          27200U  // 27200 tick @ 5.44 GHz 等效 HRTIM 时钟
@@ -94,11 +111,16 @@
 #define BSP_POWER_BUCK_DUTY_BOOST_STEP_TICK  32U
 #define BSP_POWER_BUCK_DUTY_SYNC_MAX_TICK    21760U
 #define BSP_POWER_BUCK_DUTY_SYNC_STEP_TICK   32U
+#define BSP_POWER_BUCK_DISCHARGE_CMP_TICK    1200U
 
 #define BSP_POWER_BOOST_DUTY_MIN_TICK        136U
 #define BSP_POWER_BOOST_DUTY_SYNC_MIN_TICK   1800U
 #define BSP_POWER_BOOST_DUTY_MAX_TICK        17680U
 #define BSP_POWER_BOOST_DUTY_SYNC_MAX_TICK   25568U
+
+#define POWER_CTRL_DISCHARGE_ENTER_MARGIN_ADC 80U
+#define POWER_CTRL_DISCHARGE_EXIT_MARGIN_ADC  16U
+#define POWER_CTRL_DISCHARGE_TARGET_BUCK_RATIO 0.95F
 
 #define MAX_SHORT_I 10.1F   // 短路电流判据
 #define MIN_SHORT_V 0.5F    // 短路电压判据
@@ -106,7 +128,7 @@
 #define CAL_VIN_K 3985  // 输入电压矫正K值
 #define CAL_VIN_B 33    // 输入电压矫正B值
 
-#define CAL_IIN_K 4095
+#define CAL_IIN_K  4095
 # define CAL_IIN_B 1
 
 #define CAL_VOUT_K 4059 // 输出电压矫正K值
@@ -117,14 +139,14 @@
 
 /***************故障类型*****************/
 
-#define F_NOERR 0x0000		 // 无故障
-#define F_SW_VIN_UVP 0x0001	 // 输入欠压
-#define F_SW_VIN_OVP 0x0002	 // 输入过压
-#define F_SW_VOUT_UVP 0x0004 // 输出欠压
-#define F_SW_VOUT_OVP 0x0008 // 输出过压
-#define F_SW_IOUT_OCP 0x0010 // 输出过流
-#define F_SW_SHORT 0x0020	 // 输出短路
-#define F_OTP 0x0040		 // 温度过高
+#define F_NOERR       0x0000		 // 无故障
+#define F_SW_VIN_UVP  0x0001	     // 输入欠压
+#define F_SW_VIN_OVP  0x0002	     // 输入过压
+#define F_SW_VOUT_UVP 0x0004         // 输出欠压
+#define F_SW_VOUT_OVP 0x0008         // 输出过压
+#define F_SW_IOUT_OCP 0x0010         // 输出过流
+#define F_SW_SHORT    0x0020	     // 输出短路
+#define F_OTP         0x0040		 // 温度过高
 
 #define ADC1_RESULT_VOUT_INDEX 0U
 #define ADC1_RESULT_IOUT_INDEX 1U
@@ -241,6 +263,8 @@ extern volatile float MAX_OTP_VAL;              // 过温保护阈值
 extern volatile float MAX_VOUT_OVP_VAL;         // 输出过压保护阈值
 extern volatile float MAX_VOUT_OCP_VAL;         // 输出过流保护阈值
 extern volatile float powerEfficiency;			// 电源转换效率
+extern volatile uint8_t g_boost_conduction_mode; // BOOST轻载DCM/重载CCM模式
+extern volatile uint8_t g_output_discharge_active; // 输出高于目标时主动泄放标志
 
 
 extern volatile uint8_t g_mode_switch_inject_valid;   // 模式切换占空注入有效标志
@@ -283,6 +307,50 @@ extern volatile int32_t g_mode_switch_u_seed;         // 模式切换预置环�
  */
 #define getReg(reg) (reg)
 
+UF4_FORCEINLINE void PowerControl_HRTIM_SetBuckCompareFast(uint32_t compare_tick){
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].CMP1xR = compare_tick;
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_SetAdcTriggerCompareFast(uint32_t compare_tick){
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].CMP3xR = compare_tick;
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_SetBoostCompareFast(uint32_t compare_tick){
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_D].CMP1xR = compare_tick;
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_OutputStartFast(uint32_t output_mask){
+    hhrtim1.Instance->sCommonRegs.OENR |= output_mask;
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_OutputStopFast(uint32_t output_mask){
+    hhrtim1.Instance->sCommonRegs.ODISR |= output_mask;
+}
+
+UF4_FORCEINLINE uint32_t PowerControl_HRTIM_TimerARepPendingFast(void){
+    return ((hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].TIMxISR & HRTIM_TIMISR_REP) != 0U);
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_ClearTimerARepFast(void){
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].TIMxICR = HRTIM_TIMICR_REPC;
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_EnableBuckLowSideDischargeFast(void){
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].SETx2R = HRTIM_SET2R_CMP1;
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].RSTx2R = HRTIM_RST2R_PER;
+}
+
+UF4_FORCEINLINE void PowerControl_HRTIM_DisableBuckLowSideDischargeFast(void){
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].SETx2R = 0U;
+    hhrtim1.Instance->sTimerxRegs[HRTIM_TIMERINDEX_TIMER_A].RSTx2R = 0U;
+}
+
+UF4_FORCEINLINE float PowerControl_GetBoostCurrentCompBias(void){
+    return (g_boost_conduction_mode == BSP_POWER_CONDUCTION_MODE_CCM) ?
+           BSP_POWER_CURRENT_COMP_BIAS_BOOST_CCM_V :
+           BSP_POWER_CURRENT_COMP_BIAS_BOOST_DCM_V;
+}
+
 void ADCSample(void);
 void ADC_calculate(void);
 
@@ -295,6 +363,10 @@ void StateMErr(void);
 void BBMode(void);
 void PowerControl_PrepareModeSwitch(BB_M target_mode, uint32_t vin_adc, int32_t vout_ref);
 void PowerControl_DisableOutput(void);
+void PowerControl_UpdateConductionMode(void);
+void PowerControl_ApplyBoostConductionMode(void);
+void PowerControl_UpdateDischargeMode(void);
+void PowerControl_ApplyBuckDischargeMode(void);
 
 void ValInit(void);
 void OTP(void);
