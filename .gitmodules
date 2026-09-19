@@ -1,0 +1,3 @@
+[submodule "User/3_Communicator"]
+	path = User/3_Communicator
+	url = https://gitee.com/UF4DigitalPower/UF4COM.git
