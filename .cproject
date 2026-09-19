@@ -48,6 +48,9 @@
 									<listOptionValue builtIn="false" value="../User/2_Storager"/>
 									<listOptionValue builtIn="false" value="../User/3_Communicator"/>
 									<listOptionValue builtIn="false" value="../User/4_BSP"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/protocol/Inc"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/register/Inc"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/transport/uf4com_uart/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32G4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32G4xx/Include"/>
@@ -129,6 +132,9 @@
                                     <listOptionValue builtIn="false" value="../User/2_Storager"/>
                                     <listOptionValue builtIn="false" value="../User/3_Communicator"/>
                                     <listOptionValue builtIn="false" value="../User/4_BSP"/>
+                                    <listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/protocol/Inc"/>
+                                    <listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/register/Inc"/>
+                                    <listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/transport/uf4com_uart/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32G4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32G4xx/Include"/>
