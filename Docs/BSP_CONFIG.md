@@ -90,10 +90,8 @@ MOS 有单独的高侧驱动电路，可实现 100% 占空比驱动。
 |-----------|-----------------------|-----|-------------------------------|
 | 拓扑        | Buck-boost            | -   | 升降压拓扑                         |
 | 输入电压最大值   | 72                    | V   | Input supply max              |
-| 输入电压标称值   | 48                    | V   | Input supply nom              |
 | 输入电压最小值   | 7                     | V   | Input supply min              |
 | 输出最大电流    | 10                    | A   | Output maximum Current        |
-| 输出电压      | 24                    | V   | Output voltage                |
 | 电压纹波（峰峰值） | 0.5                   | %   | Voltage ripple (peak-to-peak) |
 | 电压过冲      | 50                    | mV  | Voltage overshoot             |
 | 需求效率      | 92                    | %   | Demand efficiency             |
