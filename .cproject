@@ -81,9 +81,9 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="User"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="User"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -128,13 +128,13 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.31156325" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
-                                    <listOptionValue builtIn="false" value="../User/1_Controller"/>
-                                    <listOptionValue builtIn="false" value="../User/2_Storager"/>
-                                    <listOptionValue builtIn="false" value="../User/3_Communicator"/>
-                                    <listOptionValue builtIn="false" value="../User/4_BSP"/>
-                                    <listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/protocol/Inc"/>
-                                    <listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/register/Inc"/>
-                                    <listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/transport/uf4com_uart/Inc"/>
+									<listOptionValue builtIn="false" value="../User/1_Controller"/>
+									<listOptionValue builtIn="false" value="../User/2_Storager"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator"/>
+									<listOptionValue builtIn="false" value="../User/4_BSP"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/protocol/Inc"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/register/Inc"/>
+									<listOptionValue builtIn="false" value="../User/3_Communicator/uf4com/transport/uf4com_uart/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32G4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/Device/ST/STM32G4xx/Include"/>
@@ -165,9 +165,9 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="User"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="User"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

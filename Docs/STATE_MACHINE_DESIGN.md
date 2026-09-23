@@ -21,15 +21,15 @@ RBT6 的主要入口如下：
 
 RBT6 在 `system_sm.h` 中定义了 `BOOT(0)`、`HW_INIT(1)`、`PARAM_LOAD(2)`、`SELF_CHECK(3)`、`IDLE(4)`、`SOFT_START(5)`、`RUN(6)`、`STOPPING(7)`、`DIRECTION_SWITCH(8)`、`FAULT(9)`。当前 `SystemSm_Init()` 直接从 `SELF_CHECK` 开始；前三项是预留枚举，不是运行时已经走过的迁移。改变这些数值会改变 `UF4_ID_POWER_STATE` 的协议含义，必须同步检查上下位机。
 
-| 当前状态 | 进入动作/保持条件 | 允许迁移 |
-| --- | --- | --- |
-| `SELF_CHECK` | PWM 关闭；检查 ADC 电流/基准采样新鲜度、NTC、HRTIM 故障标志及当前检查路径覆盖的 COMP 信号 | 通过到 `IDLE`；进入本状态 1000 ms 后仍未通过则到 `FAULT` |
-| `IDLE` | PWM 关闭；等待有效使能请求 | 请求使能且自检通过到 `SOFT_START`；自检失败到 `FAULT` |
-| `SOFT_START` | 设置方向、复位调节器、允许运行；调节器逐步提升电压/电流目标 | 停止或方向变化到 `STOPPING`；当前实现经过 750 ms 到 `RUN` |
-| `RUN` | 维持闭环运行 | 停止或方向变化到 `STOPPING` |
-| `STOPPING` | 先撤销运行许可并立即关 PWM；锁存待切换方向 | 至少等待 20 ms 后到 `DIRECTION_SWITCH` 或 `IDLE` |
-| `DIRECTION_SWITCH` | 只在输出关闭后修改方向并复位调节器 | 完成后到 `IDLE`，由下一轮重新判断是否启动 |
-| `FAULT` | 锁存故障，撤销 PWM 运行许可并冗余关输出；ADC/DMA 保持运行 | 清故障请求经历释放再置位、冷却至少 1000 ms 且自检通过后回 `SELF_CHECK` |
+| 当前状态               | 进入动作/保持条件                                                 | 允许迁移                                           |
+|--------------------|-----------------------------------------------------------|------------------------------------------------|
+| `SELF_CHECK`       | PWM 关闭；检查 ADC 电流/基准采样新鲜度、NTC、HRTIM 故障标志及当前检查路径覆盖的 COMP 信号 | 通过到 `IDLE`；进入本状态 1000 ms 后仍未通过则到 `FAULT`       |
+| `IDLE`             | PWM 关闭；等待有效使能请求                                           | 请求使能且自检通过到 `SOFT_START`；自检失败到 `FAULT`          |
+| `SOFT_START`       | 设置方向、复位调节器、允许运行；调节器逐步提升电压/电流目标                            | 停止或方向变化到 `STOPPING`；当前实现经过 750 ms 到 `RUN`      |
+| `RUN`              | 维持闭环运行                                                    | 停止或方向变化到 `STOPPING`                            |
+| `STOPPING`         | 先撤销运行许可并立即关 PWM；锁存待切换方向                                   | 至少等待 20 ms 后到 `DIRECTION_SWITCH` 或 `IDLE`      |
+| `DIRECTION_SWITCH` | 只在输出关闭后修改方向并复位调节器                                         | 完成后到 `IDLE`，由下一轮重新判断是否启动                       |
+| `FAULT`            | 锁存故障，撤销 PWM 运行许可并冗余关输出；ADC/DMA 保持运行                       | 清故障请求经历释放再置位、冷却至少 1000 ms 且自检通过后回 `SELF_CHECK` |
 
 无论处于哪个非故障状态，检测到控制故障都应优先进入 `FAULT`。非法状态也应关输出并进入 `FAULT`。时间判断使用 `(uint32_t)(now - entered_ms) >= duration_ms`，以适应 tick 回绕。
 
