@@ -49,7 +49,7 @@ else ()
     add_compile_options(-Og -g)
 endif ()
 
-include_directories(Core/Inc User/1_Controller User/2_Storager User/3_Communicator User/4_BSP User/3_Communicator/uf4com/protocol/Inc User/3_Communicator/uf4com/register/Inc User/3_Communicator/uf4com/transport/uf4com_uart/Inc Drivers/STM32G4xx_HAL_Driver/Inc Drivers/STM32G4xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32G4xx/Include Drivers/CMSIS/Include)
+include_directories(Core/Inc User/1_Controller User/2_Storager/Driver User/2_Storager/Param User/2_Storager/Storage User/3_Communicator User/3_Communicator/uf4com/protocol/Inc User/3_Communicator/uf4com/register/Inc User/3_Communicator/uf4com/transport/uf4com_uart/Inc User/4_BSP Drivers/STM32G4xx_HAL_Driver/Inc Drivers/STM32G4xx_HAL_Driver/Inc/Legacy Drivers/CMSIS/Device/ST/STM32G4xx/Include Drivers/CMSIS/Include)
 
 add_definitions(-DDEBUG -DUSE_HAL_DRIVER -DSTM32G474xx)
 

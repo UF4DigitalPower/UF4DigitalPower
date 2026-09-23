@@ -22,6 +22,7 @@ ParamStatus_t Param_Rollback(void);
 
 ParamStatus_t Param_Get(ParamID_t id, void *value, size_t size);
 ParamStatus_t Param_Set(ParamID_t id, const void *value, size_t size);
+ParamStatus_t Param_ValidateSet(ParamID_t id, const void *value, size_t size);
 ParamStatus_t Param_GetByName(const char *name, void *value, size_t size);
 ParamStatus_t Param_SetByName(const char *name, const void *value, size_t size);
 

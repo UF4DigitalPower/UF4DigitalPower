@@ -91,6 +91,15 @@ ParamStatus_t Param_Set(ParamID_t id, const void *value, size_t size)
     return PARAM_OK;
 }
 
+ParamStatus_t Param_ValidateSet(ParamID_t id, const void *value, size_t size)
+{
+    const ParamDescriptor_t *descriptor;
+    if (!s_initialized) return PARAM_ERROR_NOT_INITIALIZED;
+    descriptor = ParamTable_Find(id);
+    if (descriptor == NULL) return PARAM_ERROR_NOT_FOUND;
+    return ParamValidate_Value(descriptor, value, size, true);
+}
+
 ParamStatus_t Param_GetByName(const char *name, void *value, size_t size)
 {
     const ParamDescriptor_t *descriptor = ParamTable_FindByName(name);

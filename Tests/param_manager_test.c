@@ -2,6 +2,9 @@
 #include "../User/2_Storager/Param/param_backend.h"
 #include "../User/2_Storager/Param/param_crc.h"
 #include "../User/2_Storager/Storage/storage_layout.h"
+#include "../User/2_Storager/Param/param_uf4com.h"
+#include "../User/3_Communicator/uf4com/protocol/Inc/uf4com.h"
+#include "../User/3_Communicator/uf4com/register/Inc/uf4com_id_table.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -13,6 +16,23 @@
 static uint8_t g_flash[MOCK_SIZE];
 static float g_voltage;
 static uint16_t g_current;
+
+static bool voltage_encode(const ParamDescriptor_t *descriptor,
+                           const void *value, uint16_t *wire_value)
+{
+    (void)descriptor;
+    *wire_value = (uint16_t)(*(const float *)value * 10.0f);
+    return true;
+}
+
+static bool voltage_decode(const ParamDescriptor_t *descriptor,
+                           uint16_t wire_value, void *value, size_t size)
+{
+    (void)descriptor;
+    if (size != sizeof(float)) return false;
+    *(float *)value = (float)wire_value / 10.0f;
+    return true;
+}
 
 static bool mock_read(void *context, uint32_t address, void *data, size_t length)
 {
@@ -60,15 +80,18 @@ int main(void)
     static const ParamDescriptor_t parameters[] =
     {
         {
-            .id = 0x0101u, .name = "vout_target", .type = PARAM_TYPE_FLOAT,
+            .id = UF4_ID_SET_VOLTAGE_LIMIT, .name = "vout_target",
+            .type = PARAM_TYPE_FLOAT,
             .group = PARAM_GROUP_OUTPUT,
             .flags = PARAM_FLAG_READ | PARAM_FLAG_WRITE | PARAM_FLAG_PERSISTENT,
             .storage = PARAM_STORAGE_INTERNAL, .min_value = 0.5f,
             .max_value = 40.0f, .default_value = 12.0f,
-            .size = sizeof(g_voltage), .runtime = &g_voltage
+            .size = sizeof(g_voltage), .runtime = &g_voltage,
+            .wire_encode = voltage_encode, .wire_decode = voltage_decode
         },
         {
-            .id = 0x0102u, .name = "iout_limit", .type = PARAM_TYPE_U16,
+            .id = UF4_ID_SET_CURRENT_LIMIT, .name = "iout_limit",
+            .type = PARAM_TYPE_U16,
             .group = PARAM_GROUP_OUTPUT,
             .flags = PARAM_FLAG_READ | PARAM_FLAG_WRITE | PARAM_FLAG_PERSISTENT,
             .storage = PARAM_STORAGE_INTERNAL, .min_value = 0.0f,
@@ -77,6 +100,8 @@ int main(void)
         }
     };
     float value;
+    uint16_t wire_value;
+    uf4_id_t *uf4_item;
 
     memset(g_flash, 0xFF, sizeof(g_flash));
     assert(ParamCRC32("123456789", 9u) == 0xCBF43926u);
@@ -87,20 +112,28 @@ int main(void)
     assert(g_voltage == 12.0f && g_current == 5000u && Param_IsDirty());
 
     value = 41.0f;
-    assert(Param_Set(0x0101u, &value, sizeof(value)) == PARAM_ERROR_RANGE);
+    assert(Param_Set(UF4_ID_SET_VOLTAGE_LIMIT, &value, sizeof(value)) == PARAM_ERROR_RANGE);
     value = 20.0f;
-    assert(Param_Set(0x0101u, &value, sizeof(value)) == PARAM_OK);
+    assert(Param_Set(UF4_ID_SET_VOLTAGE_LIMIT, &value, sizeof(value)) == PARAM_OK);
     assert(Param_Commit() == PARAM_OK && !Param_IsDirty());
 
     value = 30.0f;
-    assert(Param_Set(0x0101u, &value, sizeof(value)) == PARAM_OK);
+    assert(Param_Set(UF4_ID_SET_VOLTAGE_LIMIT, &value, sizeof(value)) == PARAM_OK);
     assert(Param_Commit() == PARAM_OK);
     g_flash[MOCK_REGION_SIZE + 32u] ^= 1u;
 
     value = 10.0f;
-    assert(Param_Set(0x0101u, &value, sizeof(value)) == PARAM_OK);
+    assert(Param_Set(UF4_ID_SET_VOLTAGE_LIMIT, &value, sizeof(value)) == PARAM_OK);
     assert(Param_Rollback() == PARAM_OK);
     assert(g_voltage == 20.0f && !Param_IsDirty());
+
+    assert(ParamUF4COM_Bind() == PARAM_OK);
+    uf4_item = UF4_FindID(UF4_ID_SET_VOLTAGE_LIMIT);
+    assert(uf4_item != NULL);
+    assert(UF4_IDRead(uf4_item, &wire_value) == UF4_OK && wire_value == 200u);
+    assert(UF4_IDValidateWrite(uf4_item, 410u) == UF4_ERR_OUT_OF_RANGE);
+    assert(UF4_IDWrite(uf4_item, 250u) == UF4_OK);
+    assert(g_voltage == 25.0f && Param_IsDirty());
 
     puts("parameter manager tests passed");
     return 0;
