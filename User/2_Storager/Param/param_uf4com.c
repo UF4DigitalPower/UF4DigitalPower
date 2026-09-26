@@ -1,6 +1,6 @@
 #include "param_uf4com.h"
 
-#include "../../3_Communicator/uf4com/register/Inc/uf4com_id_table.h"
+#include "uf4com_id_table.h"
 
 #include <limits.h>
 #include <string.h>
@@ -127,6 +127,7 @@ ParamStatus_t ParamUF4COM_Bind(void)
     {
         descriptor = ParamTable_At(i);
         if (descriptor->id > UINT8_MAX) return PARAM_ERROR_ARGUMENT;
+        probe = 0u;
         memcpy(&probe, descriptor->runtime, descriptor->size);
         if ((descriptor->wire_encode == NULL) &&
             !default_encode(descriptor, &probe, &wire_probe)) return PARAM_ERROR_TYPE;

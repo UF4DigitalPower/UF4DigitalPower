@@ -1,20 +1,9 @@
-/**
-  ******************************************************************************
-  * @file    pwm_control.h
-  * @author  UF4
-  * @date    26-9-26 下午5:22
-  * @brief
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 UF4.
-  * All rights reserved.
-  *
-  * This software is provided "as is", without warranty of any kind.
-  *
-  ******************************************************************************
-  */
 #ifndef PWM_CONTROL_H
 #define PWM_CONTROL_H
-
-#endif //PWM_CONTROL_H
+#include <stdbool.h>
+#include "stm32g4xx_hal.h"
+void PwmControl_Init(HRTIM_HandleTypeDef *hrtim);
+HAL_StatusTypeDef PwmControl_Enable(void);
+HAL_StatusTypeDef PwmControl_Disable(void);
+bool PwmControl_IsEnabled(void);
+#endif

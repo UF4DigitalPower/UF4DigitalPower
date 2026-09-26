@@ -30,6 +30,7 @@
 #include "usart.h"
 #include "usb.h"
 #include "gpio.h"
+#include "control_app.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -125,6 +126,8 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  ControlApp_Init();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -133,6 +136,7 @@ int main(void)
   {
     /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
+    ControlApp_Process();
   }
   /* USER CODE END 3 */
 }
