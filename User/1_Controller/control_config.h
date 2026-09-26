@@ -31,6 +31,12 @@
 #define CONTROL_CURRENT_LOOP_HZ    100000u
 #define CONTROL_VOLTAGE_LOOP_HZ     10000u
 
+/* Outer-loop defaults: approximately 0.5 Hz crossover on 470 uF. */
+/* Kp is mA/mV in Q16; Ki*Ts is (mA/mV)/sample in Q30. */
+#define CONTROL_VOLTAGE_KP_Q16       96900L
+#define CONTROL_VOLTAGE_KI_TS_Q30   100000L
+#define CONTROL_VOLTAGE_CURRENT_MAX_MA 10000u
+
 #define CONTROL_I_BASE_MA          10000
 #define CONTROL_I_SOFT_LIMIT_MA    10000
 #define CONTROL_I_OCP_HW_MA        11000

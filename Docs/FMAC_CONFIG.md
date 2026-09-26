@@ -165,6 +165,21 @@ Fc < Fs / 20
 
 `CurrentLoop_Update()` 和调度查表路径放在 `.RamFunc`，链接脚本将该段作为初始化数据复制到 SRAM；Q15 调度表保留在 Flash。电流环内部使用输出电流传感器，不读取或估算电感电流作为反馈。
 
+## 8. 10 kHz 电压 PI 外环
+
+外环实现位于 `User/1_Controller/Loop/voltage_loop.c`。每 100 us 读取经板级分压标定的输出电压，以毫伏为单位调用 `VoltageLoop_Update()`；返回值是 0...10 A 的本地输出电流参考，传给 100 kHz `CurrentLoop_SetReference_mA()` / `current_loop_sample_t.iref_mA`。误差采用 `Vref - Vout`，因此输出电压偏低时电流参考增加。功率方向由运行模式选择，外环输出始终是当前方向上的非负输出电流幅值。
+
+默认参数按 470 uF 输出电容计算：
+
+```text
+F_voltage = 10 kHz
+Kp        = 96900 / 2^16 mA/mV
+Ki*Ts     = 100000 / 2^30 mA/mV/sample
+Iout_ref  = 0...10 A
+```
+
+该默认 Kp 对应约 0.50 Hz 的理想电容电压环交越频率，PI 零点约 0.10 Hz。它是基于当前平均模型和内环最慢约 7.48 Hz 交越值的保守初值；负载模型、有效输出电容量、真实内环调度与板级电压采样标定仍需上板验证。电压 PI 支持条件积分抗饱和，并允许用 `VoltageLoop_SetGains_Q16_Q30()` 和 `VoltageLoop_SetCurrentLimit_mA()` 调整参数。更新函数和 PI 算术位于 `.RamFunc`，辅助限幅函数内联。
+
 ## 5. FMAC 定点格式
 
 FMAC 的输入、输出和系数使用 Q1.15，累加器为 Q4.22。FMAC 计算结果为：
@@ -293,4 +308,3 @@ Docs/fmac_2p2z_current_loop.m
 - 导出 `fmac_2p2z_coefficients.h`。
 
 脚本中的电感和电阻来自 `BSP_CONFIG.md`，但四开关 Buck-Boost 的四个工作方向仍应分别用实测 plant 校核。生成的系数不能绕过硬件调试直接固化到量产参数中。
-

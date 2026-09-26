@@ -50,4 +50,19 @@ typedef struct {
     uint8_t saturated;
 } current_loop_result_t;
 
+typedef struct {
+    uint32_t voltage_mV;
+    uint32_t reference_mV;
+    uint16_t current_limit_mA;
+    uint8_t enable;
+} voltage_loop_sample_t;
+
+typedef struct {
+    uint16_t current_reference_mA;
+    int32_t voltage_error_mV;
+    int32_t proportional_mA;
+    int32_t integral_mA;
+    uint8_t saturated;
+} voltage_loop_result_t;
+
 #endif /* CONTROL_TYPES_H */
