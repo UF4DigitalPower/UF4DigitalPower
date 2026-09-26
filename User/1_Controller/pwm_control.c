@@ -14,17 +14,18 @@ void PwmControl_Init(HRTIM_HandleTypeDef *h)
         compare.CompareValue=0u;
         (void)HAL_HRTIM_WaveformCompareConfig(h,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_1,&compare);
         (void)HAL_HRTIM_WaveformCompareConfig(h,HRTIM_TIMERINDEX_MASTER,HRTIM_COMPAREUNIT_4,&compare);
+        /* Keep the time bases alive for ADC trigger generation while gates are off. */
+        (void)HAL_HRTIM_WaveformCountStart(h,PWM_TIMERS);
     }
 }
 HAL_StatusTypeDef PwmControl_Enable(void)
 {
     HAL_StatusTypeDef st; if (!s_hrtim) return HAL_ERROR;
-    st=HAL_HRTIM_WaveformCountStart(s_hrtim,PWM_TIMERS); if (st!=HAL_OK) return st;
     st=HAL_HRTIM_WaveformOutputStart(s_hrtim,PWM_OUTPUTS); s_enabled=(st==HAL_OK); return st;
 }
 HAL_StatusTypeDef PwmControl_Disable(void)
 {
-    HAL_StatusTypeDef st=HAL_OK; if (s_hrtim) { st=HAL_HRTIM_WaveformOutputStop(s_hrtim,PWM_OUTPUTS); (void)HAL_HRTIM_WaveformCountStop(s_hrtim,PWM_TIMERS); }
+    HAL_StatusTypeDef st=HAL_OK; if (s_hrtim) { st=HAL_HRTIM_WaveformOutputStop(s_hrtim,PWM_OUTPUTS); }
     s_enabled=false; return st;
 }
 bool PwmControl_IsEnabled(void) { return s_enabled; }
