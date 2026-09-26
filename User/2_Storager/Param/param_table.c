@@ -29,17 +29,15 @@ ParamStatus_t ParamTable_Bind(const ParamDescriptor_t *table, size_t count)
 
 const ParamDescriptor_t *ParamTable_Find(ParamID_t id)
 {
-    size_t i;
-    for (i = 0u; i < s_count; ++i)
+    for (size_t i = 0u; i < s_count; ++i)
         if (s_table[i].id == id) return &s_table[i];
     return NULL;
 }
 
 const ParamDescriptor_t *ParamTable_FindByName(const char *name)
 {
-    size_t i;
     if (name == NULL) return NULL;
-    for (i = 0u; i < s_count; ++i)
+    for (size_t i = 0u; i < s_count; ++i)
         if (strcmp(s_table[i].name, name) == 0) return &s_table[i];
     return NULL;
 }

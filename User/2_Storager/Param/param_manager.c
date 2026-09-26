@@ -40,10 +40,9 @@ static ParamStatus_t set_default(const ParamDescriptor_t *descriptor,
 
 ParamStatus_t Param_Init(const ParamDescriptor_t *table, size_t count)
 {
-    size_t i;
     ParamStatus_t status = ParamTable_Bind(table, count);
     if (status != PARAM_OK) return status;
-    for (i = 0u; i < count; ++i)
+    for (size_t i = 0u; i < count; ++i)
     {
         status = ParamValidate_Descriptor(&table[i]);
         if (status != PARAM_OK) return status;
@@ -64,9 +63,8 @@ const ParamDescriptor_t *Param_GetDescriptor(ParamID_t id)
 
 ParamStatus_t Param_Get(ParamID_t id, void *value, size_t size)
 {
-    const ParamDescriptor_t *descriptor;
     if (!s_initialized) return PARAM_ERROR_NOT_INITIALIZED;
-    descriptor = ParamTable_Find(id);
+    const ParamDescriptor_t *descriptor = ParamTable_Find(id);
     if (descriptor == NULL) return PARAM_ERROR_NOT_FOUND;
     if ((descriptor->flags & PARAM_FLAG_READ) == 0u) return PARAM_ERROR_ACCESS;
     if ((value == NULL) || (size != descriptor->size)) return PARAM_ERROR_ARGUMENT;
@@ -76,12 +74,10 @@ ParamStatus_t Param_Get(ParamID_t id, void *value, size_t size)
 
 ParamStatus_t Param_Set(ParamID_t id, const void *value, size_t size)
 {
-    const ParamDescriptor_t *descriptor;
-    ParamStatus_t status;
     if (!s_initialized) return PARAM_ERROR_NOT_INITIALIZED;
-    descriptor = ParamTable_Find(id);
+    const ParamDescriptor_t *descriptor = ParamTable_Find(id);
     if (descriptor == NULL) return PARAM_ERROR_NOT_FOUND;
-    status = ParamValidate_Value(descriptor, value, size, true);
+    ParamStatus_t status = ParamValidate_Value(descriptor, value, size, true);
     if (status != PARAM_OK) return status;
     if (memcmp(descriptor->runtime, value, size) != 0)
     {
@@ -93,9 +89,8 @@ ParamStatus_t Param_Set(ParamID_t id, const void *value, size_t size)
 
 ParamStatus_t Param_ValidateSet(ParamID_t id, const void *value, size_t size)
 {
-    const ParamDescriptor_t *descriptor;
     if (!s_initialized) return PARAM_ERROR_NOT_INITIALIZED;
-    descriptor = ParamTable_Find(id);
+    const ParamDescriptor_t *descriptor = ParamTable_Find(id);
     if (descriptor == NULL) return PARAM_ERROR_NOT_FOUND;
     return ParamValidate_Value(descriptor, value, size, true);
 }
@@ -116,9 +111,8 @@ ParamStatus_t Param_SetByName(const char *name, const void *value, size_t size)
 
 ParamStatus_t Param_Reset(ParamID_t id)
 {
-    const ParamDescriptor_t *descriptor;
     if (!s_initialized) return PARAM_ERROR_NOT_INITIALIZED;
-    descriptor = ParamTable_Find(id);
+    const ParamDescriptor_t *descriptor = ParamTable_Find(id);
     if (descriptor == NULL) return PARAM_ERROR_NOT_FOUND;
     if ((descriptor->flags & PARAM_FLAG_WRITE) == 0u) return PARAM_ERROR_ACCESS;
     return set_default(descriptor, true);
@@ -126,17 +120,14 @@ ParamStatus_t Param_Reset(ParamID_t id)
 
 ParamStatus_t Param_ResetGroup(ParamGroup_t group)
 {
-    size_t i;
-    ParamStatus_t status;
-    const ParamDescriptor_t *descriptor;
     if (!s_initialized) return PARAM_ERROR_NOT_INITIALIZED;
-    for (i = 0u; i < ParamTable_Count(); ++i)
+    for (size_t i = 0u; i < ParamTable_Count(); ++i)
     {
-        descriptor = ParamTable_At(i);
+        const ParamDescriptor_t *descriptor = ParamTable_At(i);
         if ((descriptor->group == group) &&
             ((descriptor->flags & PARAM_FLAG_WRITE) != 0u))
         {
-            status = set_default(descriptor, true);
+            ParamStatus_t status = set_default(descriptor, true);
             if (status != PARAM_OK) return status;
         }
     }
@@ -180,9 +171,8 @@ bool Param_IsStorageDirty(ParamStorageID_t storage)
 
 static bool storage_has_parameters(ParamStorageID_t storage)
 {
-    size_t i;
     const ParamDescriptor_t *descriptor;
-    for (i = 0u; i < ParamTable_Count(); ++i)
+    for (size_t i = 0u; i < ParamTable_Count(); ++i)
     {
         descriptor = ParamTable_At(i);
         if (((descriptor->flags & PARAM_FLAG_PERSISTENT) != 0u) &&
@@ -193,10 +183,9 @@ static bool storage_has_parameters(ParamStorageID_t storage)
 
 static ParamStatus_t make_snapshot(ParamStorageID_t storage, size_t *length)
 {
-    size_t i;
     size_t offset = 0u;
     const ParamDescriptor_t *descriptor;
-    for (i = 0u; i < ParamTable_Count(); ++i)
+    for (size_t i = 0u; i < ParamTable_Count(); ++i)
     {
         descriptor = ParamTable_At(i);
         if (((descriptor->flags & PARAM_FLAG_PERSISTENT) == 0u) ||
@@ -270,10 +259,9 @@ static void apply_snapshot(ParamStorageID_t storage, size_t length)
 
 static ParamStatus_t validate_loaded_storage(ParamStorageID_t storage)
 {
-    size_t i;
     const ParamDescriptor_t *descriptor;
     ParamStatus_t status;
-    for (i = 0u; i < ParamTable_Count(); ++i)
+    for (size_t i = 0u; i < ParamTable_Count(); ++i)
     {
         descriptor = ParamTable_At(i);
         if (((descriptor->flags & PARAM_FLAG_PERSISTENT) == 0u) ||

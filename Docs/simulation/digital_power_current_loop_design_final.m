@@ -1,7 +1,8 @@
 function results = digital_power_current_loop_design_final()
 % DIGITAL_POWER_CURRENT_LOOP_DESIGN_FINAL
 % STM32G474 + FMAC / 4-switch synchronous bidirectional buck-boost
-% 200 kHz current-loop averaged-model design and FMAC export.
+% 200 kHz PWM / 100 kHz current-loop execution / 10 kHz voltage-loop
+% averaged-model design and FMAC export.
 %
 % IMPORTANT:
 % This is a control-design averaged model. It is NOT a switching-level
@@ -82,7 +83,9 @@ if min(IadcPos,IadcNeg) < P.Iocp_hw
 end
 
 fprintf('fsw                         = %.1f kHz\n', P.fsw/1e3);
-fprintf('Ts                          = %.3f us\n', P.Ts*1e6);
+fprintf('current-loop rate           = %.1f kHz\n', P.Fcurrent/1e3);
+fprintf('voltage-loop rate           = %.1f kHz\n', P.Fvoltage/1e3);
+fprintf('current-loop Ts             = %.3f us\n', P.Ts*1e6);
 fprintf('L                           = %.3f uH\n', P.L*1e6);
 fprintf('L DCR                       = %.3f mOhm\n', P.RL_DCR*1e3);
 fprintf('Cout                        = %.1f uF\n', P.C*1e6);
@@ -163,8 +166,8 @@ if isempty(base)
     base = pwd;
 end
 
-csvFile = fullfile(base,'current_loop_full_scan_final.csv');
-headerFile = fullfile(base,'current_loop_fmac_coeff_final.h');
+csvFile = fullfile(base,'current_loop_full_scan_100k.csv');
+headerFile = fullfile(base,'current_loop_fmac_coeff_100k.h');
 
 save_scan_csv(data,csvFile);
 write_fmac_header(fmacBuck,fmacBoost,designBuck,designBoost,P,headerFile);
@@ -198,7 +201,10 @@ function P = default_params()
 
 % Power stage
 P.fsw = 200e3;
-P.Ts = 1/P.fsw;
+P.Fcurrent = 100e3;
+P.Fvoltage = 10e3;
+P.Ts_pwm = 1/P.fsw;
+P.Ts = 1/P.Fcurrent;
 
 P.L = 15e-6;
 P.RL_DCR = 6.5e-3;
@@ -237,14 +243,14 @@ P.Dmax = 1;
 
 % Controller design target.
 % Keep crossover comfortably below fsw/10 initially.
-P.fc_target = 10e3;
+P.fc_target = 4e3;
 P.PM_target = 60;
 P.PM_min = 50;
 P.GM_min = 6;
 
 % Frequency sweep
 P.fmin = 5;
-P.fmax = 0.49*P.fsw;
+P.fmax = 0.49*P.Fcurrent;
 P.Nfreq = 800;
 
 % Digital delay model:
@@ -264,7 +270,7 @@ P.DesignLoadModel = 'RESISTIVE';
 
 % Type-II controller search grid. The same grid is used for BUCK, BOOST,
 % and the diagnostic universal controller search.
-P.fc_candidates = [5 7.5 10 12 15 18 20 25]*1e3;
+P.fc_candidates = [0.5 0.75 1 1.5 2 2.5 3 4 5 6 8]*1e3;
 P.fz_ratio = [0.05 0.08 0.1 0.15 0.2 0.3 0.5 0.8];
 P.fp_ratio = [2 3 4 5 7 10];
 P.MaxControllerSearchPoints = 48;
@@ -438,6 +444,7 @@ r = struct( ...
     'D',NaN, ...
     'ILdc',NaN, ...
     'LoadModel','', ...
+    'FeedbackSensor','', ...
     'Gplant',tf(0), ...
     'PlantDCGain',NaN, ...
     'fc_max',NaN, ...
@@ -463,6 +470,7 @@ r.Io = op.Io;
 r.D = op.D;
 r.ILdc = op.ILdc;
 r.LoadModel = P.DesignLoadModel;
+r.FeedbackSensor = output_current_sensor(op.Mode);
 
 Rload = op.Vo/max(op.Io,1e-9);
 r.Rload = Rload;
@@ -667,6 +675,24 @@ end
 
 
 %% ========================================================================
+function sensor = output_current_sensor(mode)
+
+% The current loop always regulates the output current in the active
+% power-flow direction. These are the physical ADC channels used by the
+% firmware; their polarity is converted to positive local source-to-load
+% current before forming the normalized error.
+if startsWith(mode,'FWD_')
+    sensor = 'FORWARD_IOUT';
+elseif startsWith(mode,'REV_')
+    sensor = 'REVERSE_IOUT';
+else
+    error('Unknown direction in mode: %s',mode);
+end
+
+end
+
+
+%% ========================================================================
 function design = design_group_controller(data,P,name)
 
 design = struct();
@@ -698,6 +724,11 @@ searchIdx = unique(round(linspace(1,numel(data), ...
 searchPlantResp = plantResp(:,searchIdx);
 
 s = tf('s');
+
+% In the local BOOST convention, increasing D reduces the output-side
+% conduction interval. Reverse the controller sign so positive current error
+% always commands positive output-current correction.
+loopSign = controller_sign(name);
 
 for fc = P.fc_candidates
 
@@ -731,12 +762,12 @@ for fc = P.fc_candidates
             end
 
             K = 1/median(mags);
-            C = K*C0;
+            C = loopSign*K*C0;
 
             controllerResp = squeeze(freqresp(C0,wSweep));
             controllerResp = controllerResp(:);
 
-            loopResp = K*controllerResp.*searchPlantResp;
+            loopResp = loopSign*K*controllerResp.*searchPlantResp;
 
             [FCs,PMs,GMs] = exact_margins_response_matrix( ...
                 loopResp,wSweep,P.Tdelay);
@@ -786,7 +817,7 @@ end
 
 % If no strict candidate exists, select the least-bad candidate.
 if ~design.Valid
-    [bestController,bestMeta] = best_effort_controller(data,P);
+    [bestController,bestMeta] = best_effort_controller(data,P,name);
 
     design.Controller = bestController;
     design.K = bestMeta.K;
@@ -824,9 +855,11 @@ end
 
 
 %% ========================================================================
-function [Cbest,d] = best_effort_controller(data,P)
+function [Cbest,d] = best_effort_controller(data,P,name)
 
 s = tf('s');
+
+loopSign = controller_sign(name);
 
 bestCost = Inf;
 Cbest = tf(0);
@@ -873,12 +906,12 @@ for fc = P.fc_candidates
             end
 
             K = 1/median(mags);
-            C = K*C0;
+            C = loopSign*K*C0;
 
             controllerResp = squeeze(freqresp(C0,wSweep));
             controllerResp = controllerResp(:);
 
-            loopResp = K*controllerResp.*searchPlantResp;
+            loopResp = loopSign*K*controllerResp.*searchPlantResp;
 
             [fcg,pm,gm] = exact_margins_response_matrix( ...
                 loopResp,wSweep,P.Tdelay);
@@ -922,6 +955,18 @@ for fc = P.fc_candidates
 
         end
     end
+end
+end
+
+
+%% ========================================================================
+function signValue = controller_sign(name)
+
+if strcmpi(name,'BOOST')
+    signValue = -1;
+else
+    % BUCK and the mixed UNIVERSAL diagnostic use the local positive sign.
+    signValue = 1;
 end
 
 end
@@ -1448,6 +1493,9 @@ fprintf(fid,'/* BOOST: K=%.9g, fc=%.3f kHz, PM=%.3f deg, GM=%.3f dB */\n', ...
 
 fprintf(fid,'/* Vin range  = %.3f ... %.3f V */\n',P.VinMin,P.VinMax);
 fprintf(fid,'/* Vout range = %.3f ... %.3f V */\n',P.VoutMin,P.VoutMax);
+fprintf(fid,'/* PWM        = %.3f kHz */\n',P.fsw/1e3);
+fprintf(fid,'/* Current loop execution = %.3f kHz */\n',P.Fcurrent/1e3);
+fprintf(fid,'/* Voltage loop execution = %.3f kHz */\n',P.Fvoltage/1e3);
 fprintf(fid,'/* L          = %.9g H */\n',P.L);
 fprintf(fid,'/* Cout       = %.9g F */\n',P.C);
 fprintf(fid,'/* Rs         = %.9g Ohm */\n',P.Rs);
