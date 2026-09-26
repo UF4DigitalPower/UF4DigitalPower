@@ -1,4 +1,4 @@
-function results = digital_power_current_loop_design_final()
+function results = digital_power_current_loop_design_final(stage)
 % DIGITAL_POWER_CURRENT_LOOP_DESIGN_FINAL
 % STM32G474 + FMAC / 4-switch synchronous bidirectional buck-boost
 % 200 kHz PWM / 100 kHz current-loop execution / 10 kHz voltage-loop
@@ -11,14 +11,16 @@ function results = digital_power_current_loop_design_final()
 % separately.
 %
 % Final hardware baseline used here:
-%   Vin      = 5...40 V
-%   Vout     = 0.5...40 V
+%   Vin      = 12...70 V
+%   Vout     = 1...70 V
 %   fsw      = 200 kHz
-%   L        = 22 uH
-%   L DCR    = 2.5 mOhm
-%   Cout     = 630 uF
+%   current-loop execution = 100 kHz
+%   voltage-loop execution = 10 kHz (controller not modeled here)
+%   L        = 15 uH
+%   L DCR    = 6.5 mOhm
+%   Cout     = 470 uF
 %   Cout ESR = 25 mOhm (editable; replace with measured effective ESR)
-%   Rs       = 7 mOhm
+%   Rs       = 8 mOhm
 %   INA gain = 20 V/V
 %   Isoft    = 10 A
 %   HW OCP   = 11 A
@@ -56,6 +58,10 @@ function results = digital_power_current_loop_design_final()
 %
 % Requires:
 %   MATLAB + Control System Toolbox
+
+if nargin == 0
+    stage = 'full';
+end
 
 clc;
 fprintf('\n============================================================\n');
@@ -118,6 +124,13 @@ end
 fprintf('--- Plant scan ---\n');
 print_scan_summary(data);
 
+if strcmpi(stage,'plant')
+    results = struct('Parameters',P,'OperatingPoints',ops,'Scan',data);
+    return;
+elseif ~strcmpi(stage,'full')
+    error('Unknown design stage: %s',stage);
+end
+
 %% Controller synthesis
 fprintf('\n--- Type-II controller synthesis ---\n');
 
@@ -133,6 +146,10 @@ designUniversal = design_group_controller(data,P,'UNIVERSAL');
 print_design('BUCK controller',designBuck);
 print_design('BOOST controller',designBoost);
 print_design('UNIVERSAL diagnostic',designUniversal);
+
+% Store the selected controller's per-point loop margins in the scan table.
+data = attach_group_metrics(data,buckIdx,designBuck);
+data = attach_group_metrics(data,boostIdx,designBoost);
 
 %% Nonlinear averaged verification
 fprintf('\n--- Nonlinear averaged-loop verification ---\n');
@@ -151,7 +168,31 @@ for k = 1:numel(tests)
         nl(k).peakError,nl(k).finalError,nl(k).dutySaturated);
 end
 
-%% FMAC export
+%% Export diagnostic scan and gate FMAC coefficients
+base = fileparts(mfilename('fullpath'));
+if isempty(base)
+    base = pwd;
+end
+
+csvFile = fullfile(base,'current_loop_full_scan_100k.csv');
+save_scan_csv(data,csvFile);
+
+if ~designBuck.Valid || ~designBoost.Valid
+    warning(['No controller meets PM >= %.1f deg and GM >= %.1f dB ' ...
+        'at every scanned point. Diagnostic scan: %s. FMAC coefficients ' ...
+        'were not generated.'],P.PM_min,P.GM_min,csvFile);
+    results = struct('Parameters',P,'OperatingPoints',ops,'Scan',data, ...
+        'Buck',designBuck,'Boost',designBoost, ...
+        'Universal',designUniversal,'Nonlinear',nl,'Valid',false);
+    return;
+end
+
+if any([nl.dutySaturated]) || any([nl.finalError] > P.IrefStep*0.1)
+    error(['The averaged nonlinear tests failed saturation or settling ' ...
+        'criteria. Diagnostic scan: %s. FMAC coefficients were not ' ...
+        'generated.'],csvFile);
+end
+
 fprintf('\n--- FMAC coefficient generation ---\n');
 
 fmacBuck  = make_fmac(designBuck,P,'BUCK');
@@ -161,15 +202,8 @@ print_fmac('BUCK',fmacBuck);
 print_fmac('BOOST',fmacBoost);
 
 %% Export
-base = fileparts(mfilename('fullpath'));
-if isempty(base)
-    base = pwd;
-end
-
-csvFile = fullfile(base,'current_loop_full_scan_100k.csv');
 headerFile = fullfile(base,'current_loop_fmac_coeff_100k.h');
 
-save_scan_csv(data,csvFile);
 write_fmac_header(fmacBuck,fmacBoost,designBuck,designBoost,P,headerFile);
 
 fprintf('\n--- Export ---\n');
@@ -201,8 +235,8 @@ function P = default_params()
 
 % Power stage
 P.fsw = 200e3;
-P.Fcurrent = 100e3;
-P.Fvoltage = 10e3;
+P.Fcurrent = 100e3;  % Control execution rate; PWM remains at 200 kHz.
+P.Fvoltage = 10e3;  % Execution rate only; voltage-loop gain is not designed here.
 P.Ts_pwm = 1/P.fsw;
 P.Ts = 1/P.Fcurrent;
 
@@ -242,7 +276,7 @@ P.Dmin = 0;
 P.Dmax = 1;
 
 % Controller design target.
-% Keep crossover comfortably below fsw/10 initially.
+% Desired current-loop crossover; actual crossover is checked per point.
 P.fc_target = 4e3;
 P.PM_target = 60;
 P.PM_min = 50;
@@ -270,7 +304,7 @@ P.DesignLoadModel = 'RESISTIVE';
 
 % Type-II controller search grid. The same grid is used for BUCK, BOOST,
 % and the diagnostic universal controller search.
-P.fc_candidates = [0.5 0.75 1 1.5 2 2.5 3 4 5 6 8]*1e3;
+P.fc_candidates = [0.1 0.2 0.3 0.5 0.75 1 1.5 2 3 4 5 6 8]*1e3;
 P.fz_ratio = [0.05 0.08 0.1 0.15 0.2 0.3 0.5 0.8];
 P.fp_ratio = [2 3 4 5 7 10];
 P.MaxControllerSearchPoints = 48;
@@ -725,11 +759,6 @@ searchPlantResp = plantResp(:,searchIdx);
 
 s = tf('s');
 
-% In the local BOOST convention, increasing D reduces the output-side
-% conduction interval. Reverse the controller sign so positive current error
-% always commands positive output-current correction.
-loopSign = controller_sign(name);
-
 for fc = P.fc_candidates
 
     for rz = P.fz_ratio
@@ -761,13 +790,16 @@ for fc = P.fc_candidates
                 continue;
             end
 
-            K = 1/median(mags);
-            C = loopSign*K*C0;
+            % Normalize against the highest plant magnitude. Median
+            % normalization makes high-gain operating points cross over far
+            % above the requested bandwidth and can destabilize the group.
+            K = 1/max(mags);
+            C = K*C0;
 
             controllerResp = squeeze(freqresp(C0,wSweep));
             controllerResp = controllerResp(:);
 
-            loopResp = loopSign*K*controllerResp.*searchPlantResp;
+            loopResp = K*controllerResp.*searchPlantResp;
 
             [FCs,PMs,GMs] = exact_margins_response_matrix( ...
                 loopResp,wSweep,P.Tdelay);
@@ -817,7 +849,7 @@ end
 
 % If no strict candidate exists, select the least-bad candidate.
 if ~design.Valid
-    [bestController,bestMeta] = best_effort_controller(data,P,name);
+    [bestController,bestMeta] = best_effort_controller(data,P);
 
     design.Controller = bestController;
     design.K = bestMeta.K;
@@ -855,11 +887,9 @@ end
 
 
 %% ========================================================================
-function [Cbest,d] = best_effort_controller(data,P,name)
+function [Cbest,d] = best_effort_controller(data,P)
 
 s = tf('s');
-
-loopSign = controller_sign(name);
 
 bestCost = Inf;
 Cbest = tf(0);
@@ -905,13 +935,13 @@ for fc = P.fc_candidates
                 continue;
             end
 
-            K = 1/median(mags);
-            C = loopSign*K*C0;
+            K = 1/max(mags);
+            C = K*C0;
 
             controllerResp = squeeze(freqresp(C0,wSweep));
             controllerResp = controllerResp(:);
 
-            loopResp = loopSign*K*controllerResp.*searchPlantResp;
+            loopResp = K*controllerResp.*searchPlantResp;
 
             [fcg,pm,gm] = exact_margins_response_matrix( ...
                 loopResp,wSweep,P.Tdelay);
@@ -956,19 +986,6 @@ for fc = P.fc_candidates
         end
     end
 end
-end
-
-
-%% ========================================================================
-function signValue = controller_sign(name)
-
-if strcmpi(name,'BOOST')
-    signValue = -1;
-else
-    % BUCK and the mixed UNIVERSAL diagnostic use the local positive sign.
-    signValue = 1;
-end
-
 end
 
 
@@ -1443,6 +1460,18 @@ if ismember('Poles',T.Properties.VariableNames)
 end
 
 writetable(T,file);
+
+end
+
+
+%% ========================================================================
+function data = attach_group_metrics(data,mask,design)
+
+idx = find(mask);
+for k = 1:numel(idx)
+    data(idx(k)).PM = design.PM(k);
+    data(idx(k)).GM = design.GM(k);
+end
 
 end
 
