@@ -2,7 +2,7 @@
 
 ## 范围与现状
 
-本文整理 `Upper/STM32G474RBT6` 的功率控制实现，为后续在 G474 工程中维护或迁移状态机提供约定。本文是设计与检查清单，不表示 `STM32G474BMP` 已实现这些迁移。BMP 工程当前的 `User/3_Communicator/pc_main.c` 仅包含通信示例使用的状态寄存器。
+本文整理 G474 工程的功率控制状态机约定。`STM32G474BMP` 现已由 `User/1_Controller/control_app.c` 接入状态机、UF4COM 和内部 Flash 参数管理；快速环的 HRTIM 中断调制仍需按实际桥臂映射完成上板验证。
 
 RBT6 的主要入口如下：
 
