@@ -1,6 +1,6 @@
-# FMAC 2P2Z 电流内环设计
+# FMAC 100 kHz 电流内环设计
 
-本文说明 STM32G474 如何用 FMAC 直接执行 2P2Z Type-II 电流补偿器。FMAC 的 IIR 单元虽然在 RM0440 中归在“滤波器”章节，但它实际执行的是递推差分方程。输入可以是电流误差，输出可以直接是 PWM 调制量，不需要再在 CPU 中实现一套 PI 或滤波器。
+本文说明 STM32G474 如何用 FMAC 执行输出端口电流环。FMAC 的 IIR 单元实际执行递推差分方程，输入是归一化电流误差，输出是归一化占空比扰动。功率级没有电感电流传感器，电感电流只作为模型内部状态。
 
 设计依据：
 
@@ -11,12 +11,12 @@
 
 ## 1. 工程时序
 
-板级设计中的开关频率为 200 kHz，电流内环目标执行频率为 50 kHz。因此电流控制每 4 个 PWM 周期执行一次：
+板级设计中的开关频率为 200 kHz，电流内环执行频率为 100 kHz。因此电流控制每 2 个 PWM 周期执行一次：
 
 ```text
 F_pwm   = 200 kHz
-F_loop  = 50 kHz
-T_loop  = 20 us
+F_loop  = 100 kHz
+T_loop  = 10 us
 ```
 
 ADC 采样必须由 HRTIM 定时触发，采样点放在开关噪声较小的位置。当前工程使用 HRTIM Master Compare 3 触发 `ADC1` 和 `ADC4`，比较值为 `13600`。这个触发点需要结合实际 HRTIM 周期确认，不能只按寄存器数值假设采样位置正确。
@@ -38,7 +38,8 @@ ADC1 DMA[3] = FORWARD_IOUT
 
 ```text
 Vbus 标称值       48 V
-最大输入/输出电压 72 V
+实际输入电压范围 12...70 V
+实际输出电压范围 1...70 V
 电感 L            15 uH
 电感电阻 RL       6.5 mOhm
 输入/输出电容     470 uF
@@ -72,6 +73,8 @@ INA240A1 增益     20 V/V
 ```text
 e[n] = Iref[n] - Imeas[n]
 ```
+
+正向使用 `FORWARD_IOUT`，反向使用 `REVERSE_IOUT`。固件先按物理方向把输出电流换算成当前局部 source-to-load 方向的正值，再计算误差。反向功率级与正向功率级完全对称，因此两种方向共用同一张局部工作点调度表；切换方向时必须清空或预装载 FMAC 的历史状态。
 
 ## 3. 2P2Z 控制器方程
 
@@ -140,14 +143,27 @@ AN5788 建议数字环路的目标交越频率满足：
 Fc < Fs / 20
 ```
 
-对于 50 kHz 电流环，第一版建议把 `Fc` 控制在 2.5 kHz 以下，再根据实测响应调整。验收时至少检查：
+对于 100 kHz 电流环，交越频率必须根据全范围功率级和邻域调度验证结果确定。当前最终设计使用每个工作点的积分增益调度，最慢邻域交越频率约 7.48 Hz，验收时至少检查：
 
 ```text
-相位裕量 PM > 45 deg
-增益裕量 GM > 10 dB
+相位裕量 PM >= 50 deg
+增益裕量 GM >= 6 dB
 ```
 
 实际设计不能只看 PM。若 PM 很大但 GM 很小，说明高频仍有额外增益交越，器件偏差和延迟可能使系统变得不稳定。
+
+最终脚本 `Docs/simulation/current_loop_robust_design_final.m` 会依次生成并检查：
+
+- `current_loop_robust_integral_100k.csv`：BUCK/BOOST 的逐工作点积分增益和 Q15 系数；
+- `current_loop_robust_midpoint_check`：相邻调度点之间的中点功率级；
+- `current_loop_robust_step_validation`：输出端口电流的非线性阶跃；
+- `current_loop_robust_step_validation_100k.csv`：代表性点的阶跃结果。
+
+当前模型检查结果为 7536/7536 个 midpoint 邻域组合通过，最小 PM 为 64.29 deg，最小 GM 为 6.28 dB；5 个代表性非线性阶跃均未饱和，最终误差小于数值容差。最慢邻域交越频率约 7.48 Hz，因此 10 kHz 是电压环执行率，不代表电压环可以使用 10 kHz 交越频率；电压环仍需单独设计和验证。
+
+固件实现位于 `User/1_Controller/Loop/current_loop.c`。100 kHz 采样点构造 `current_loop_sample_t` 后调用 `CurrentLoop_Update()`，返回 Q15 占空比。`vref_adc` 必须来自实时 VREF165 采样，不能在控制函数中固定为 1.65 V。`duty_base_q15` 由功率级调制器或电压环提供，电流环只叠加归一化占空比扰动。`CurrentLoop_SetMode()` 在 FWD/REV 或 BUCK/BOOST 切换时清除积分历史。
+
+`CurrentLoop_Update()` 和调度查表路径放在 `.RamFunc`，链接脚本将该段作为初始化数据复制到 SRAM；Q15 调度表保留在 Flash。电流环内部使用输出电流传感器，不读取或估算电感电流作为反馈。
 
 ## 5. FMAC 定点格式
 
@@ -231,7 +247,7 @@ Y ：初始控制量历史值
 
 若 X1 或 Y 的历史值没有初始化，控制器启动时会使用未定义的延迟状态，可能出现一个很大的 PWM 脉冲。
 
-## 7. 50 kHz 执行流程
+## 7. 100 kHz 执行流程
 
 推荐控制链路如下：
 
@@ -268,28 +284,13 @@ Docs/fmac_2p2z_current_loop.m
 
 脚本用于：
 
-- 配置 50 kHz 电流环和 200 kHz PWM；
+- 配置 100 kHz 电流环和 200 kHz PWM；
 - 输入电感、等效电阻、母线电压和采样缩放；
-- 设计 Type-II 2P2Z；
+- 使用 `current_loop_robust_design_final.m` 生成积分型 2P2Z 调度表；
 - Tustin 离散化；
 - 生成 FMAC 的 B/A 系数、Q15 数值和 `R`；
 - 生成 RM0440 的 X1/X2/Y 内存布局；
 - 导出 `fmac_2p2z_coefficients.h`。
 
 脚本中的电感和电阻来自 `BSP_CONFIG.md`，但四开关 Buck-Boost 的四个工作方向仍应分别用实测 plant 校核。生成的系数不能绕过硬件调试直接固化到量产参数中。
-
-## 9. 调试检查
-
-按以下顺序检查，能减少定位时间：
-
-1. 用示波器确认 PWM 实际频率为 200 kHz，控制执行频率为 50 kHz。
-2. 确认 ADC 触发发生在预期的 PWM 位置。
-3. 静态测量 `VREF165`，确认正向和反向零电流时的 ADC 偏差已扣除。
-4. 在 FMAC 停止状态下读回 X2，确认系数顺序为 `[B0 B1 B2 A1 A2]`。
-5. 用已知误差序列验证 FMAC 输出与 MATLAB 差分方程逐点一致。
-6. 先限制 PWM 输出，再逐步提高电流给定。
-7. 检查 FMAC 的 `SAT`、`OVFL`、`UNFL` 标志。
-8. 分别验证 Buck、Boost 和正反向切换时的历史状态处理。
-
-当前工程的 `Core/Src/fmac.c` 只有 FMAC 时钟和基础初始化，尚未完成上述 2P2Z 配置和控制调度。
 

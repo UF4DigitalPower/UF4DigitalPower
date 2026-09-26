@@ -6,14 +6,14 @@
 
 RBT6 的主要入口如下：
 
-| 职责                           | 当前实现                                                               | 执行上下文            |
-|------------------------------|--------------------------------------------------------------------|------------------|
-| 功率生命周期及启停、换向、故障恢复            | `USER/App/system_sm.c`                                             | 主循环前台            |
-| 命令快照和通信授权                    | `USER/App/command_mailbox.c`、`USER/Communication/uf4com_adapter.c` | 主循环前台            |
-| 软件故障锁存、闭环运行许可                | `USER/Control/power_control.c`                                     | 前台与中断            |
-| 比较器/HRTIM 保护和输出门控            | `USER/Bsp/power_hw.c`                                              | 硬件与中断            |
-| 电压/电流调节、软启动斜坡、Buck/Mix/Boost | `USER/Control/power_regulator.c`                                   | 10 kHz/50 kHz 中断 |
-| 串口字节解析、链路、Flash 保存           | 各自模块                                                               | 独立流程，不属于功率生命周期   |
+| 职责                           | 当前实现                                                               | 执行上下文             |
+|------------------------------|--------------------------------------------------------------------|-------------------|
+| 功率生命周期及启停、换向、故障恢复            | `USER/App/system_sm.c`                                             | 主循环前台             |
+| 命令快照和通信授权                    | `USER/App/command_mailbox.c`、`USER/Communication/uf4com_adapter.c` | 主循环前台             |
+| 软件故障锁存、闭环运行许可                | `USER/Control/power_control.c`                                     | 前台与中断             |
+| 比较器/HRTIM 保护和输出门控            | `USER/Bsp/power_hw.c`                                              | 硬件与中断             |
+| 电压/电流调节、软启动斜坡、Buck/Mix/Boost | `USER/Control/power_regulator.c`                                   | 10 kHz/100 kHz 中断 |
+| 串口字节解析、链路、Flash 保存           | 各自模块                                                               | 独立流程，不属于功率生命周期    |
 
 基本规则：**命令是请求，状态是事实，故障是独立锁存，方向与控制模式是正交维度。** 不把方向、Buck/Mix/Boost、CC/CV 与生命周期状态组合成大量枚举值；也不让通信中断直接改变功率状态。
 
@@ -37,7 +37,7 @@ RBT6 在 `system_sm.h` 中定义了 `BOOT(0)`、`HW_INIT(1)`、`PARAM_LOAD(2)`�
 
 主循环按 `Uf4ComAdapter_Process()`、`CommandMailbox_Process()`、`SystemSm_Process()` 的顺序工作。每次状态机调用只读取一次 `power_command_t` 快照；先处理故障优先级，再按当前状态迁移，最后发布状态遥测。状态机是功率生命周期 `s_state`、进入时间和待切换方向的唯一写入者。每次迁移的输出使能/关闭、调节器复位、计时起点应集中在明确的进入动作中，避免状态值已变而硬件动作尚未完成。
 
-HRTIM/COMP 硬件保护及故障中断必须能够不等待前台就关闭栅极并锁存原因；前台负责将其发布为 `FAULT`，决定是否允许清除。50 kHz 内环和 10 kHz 外环只消费运行许可、更新控制量或锁存故障，不修改高层生命周期。`PowerControl_ClearFault()` 只能从满足冷却、自检和清故障边沿条件的故障恢复路径调用；清除软件锁存与公开故障位时应审查中断竞争，避免新故障在清除过程中丢失。
+HRTIM/COMP 硬件保护及故障中断必须能够不等待前台就关闭栅极并锁存原因；前台负责将其发布为 `FAULT`，决定是否允许清除。100 kHz 内环和 10 kHz 外环只消费运行许可、更新控制量或锁存故障，不修改高层生命周期。`PowerControl_ClearFault()` 只能从满足冷却、自检和清故障边沿条件的故障恢复路径调用；清除软件锁存与公开故障位时应审查中断竞争，避免新故障在清除过程中丢失。
 
 ADC/DMA 在初始化后持续采样，不随 `IDLE`、`STOPPING` 或 `FAULT` 停止。故障时关闭的是功率级 PWM 输出和运行许可；采样、保护监测、通信与故障遥测继续工作，供定位故障和恢复前自检使用。不得把“采样持续运行”等同于“采样始终有效”：DMA 停滞或数据过期仍须被检测，且无有效采样时不能重新使能 PWM。
 
@@ -45,13 +45,13 @@ ADC/DMA 在初始化后持续采样，不随 `IDLE`、`STOPPING` 或 `FAULT` 停
 
 ## 独立状态与遥测
 
-| 量 | 建议含义 | 注意事项 |
-| --- | --- | --- |
-| 功率生命周期 | `SELF_CHECK/IDLE/SOFT_START/RUN/STOPPING/DIRECTION_SWITCH/FAULT` 中恰好一个 | `UF4_ID_POWER_STATE (0x15)` 当前绑定 `g_uf4_power_state` |
-| 故障原因 | 可同时出现的锁存位和首个故障原因 | `UF4_ID_FAULT_STATE (0x16)` 不应当作生命周期枚举 |
-| 保护原始状态 | COMP 原始电平及 HRTIM FLT 使能位 | `UF4_ID_STATE_MACHINE_FLAG_BITS (0x17)` 当前绑定 `g_uf4_protection_status`；不是状态迁移事件或故障锁存 |
-| 方向、拓扑、CC/CV | 与生命周期正交的当前值 | 分开发布，不生成组合状态 |
-| 通信解析/链路、Flash 保存 | 各模块私有状态 | 不共享功率状态枚举 |
+| 量                | 建议含义                                                                   | 注意事项                                                                                 |
+|------------------|------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| 功率生命周期           | `SELF_CHECK/IDLE/SOFT_START/RUN/STOPPING/DIRECTION_SWITCH/FAULT` 中恰好一个 | `UF4_ID_POWER_STATE (0x15)` 当前绑定 `g_uf4_power_state`                                 |
+| 故障原因             | 可同时出现的锁存位和首个故障原因                                                       | `UF4_ID_FAULT_STATE (0x16)` 不应当作生命周期枚举                                               |
+| 保护原始状态           | COMP 原始电平及 HRTIM FLT 使能位                                               | `UF4_ID_STATE_MACHINE_FLAG_BITS (0x17)` 当前绑定 `g_uf4_protection_status`；不是状态迁移事件或故障锁存 |
+| 方向、拓扑、CC/CV      | 与生命周期正交的当前值                                                            | 分开发布，不生成组合状态                                                                         |
+| 通信解析/链路、Flash 保存 | 各模块私有状态                                                                | 不共享功率状态枚举                                                                            |
 
 协议定义了 `UF4_ID_STATE_MACHINE_STATE (0x18)`，RBT6 当前遥测表未绑定该 ID；不要假定它与 `0x15` 等价。`power_telemetry.h` 中的 `DIGITAL_POWER_STATE_*`/`g_digital_power_status.state` 也不是当前高层状态的权威来源。后续应确定一个权威状态及固定协议编码，其他显示字段从它派生；废弃或实现未使用的 ID 前先确认现有上位机兼容性。
 

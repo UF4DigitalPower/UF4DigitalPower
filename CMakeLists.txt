@@ -1,4 +1,4 @@
-#此文件从模板自动生成! 请勿更改!
+﻿#此文件从模板自动生成! 请勿更改!
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
 cmake_minimum_required(VERSION 3.30)

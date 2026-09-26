@@ -43,7 +43,7 @@ function results = digital_power_current_loop_design_final(stage)
 %   normalized error = (Iref - Iout)/Ibase
 %   controller output = normalized duty perturbation
 %
-% Type-II:
+% Legacy fixed Type-II diagnostic controller:
 %   C(s) = K*(1+s/wz)/(s*(1+s/wp))
 %   discretized by Tustin to a 2P2Z form.
 %
@@ -132,7 +132,8 @@ elseif ~strcmpi(stage,'full')
 end
 
 %% Controller synthesis
-fprintf('\n--- Type-II controller synthesis ---\n');
+fprintf('\n--- Legacy fixed Type-II diagnostic synthesis ---\n');
+fprintf('For the deployable full-range schedule run current_loop_robust_design_final.\n');
 
 buckIdx = contains({data.Mode},'_BUCK');
 boostIdx = contains({data.Mode},'_BOOST');
@@ -1082,8 +1083,8 @@ logm = log10(mag);
 idx = find(logm(1:end-1)>=0 & logm(2:end)<0,1,'first');
 
 if isempty(idx)
-    % If there is no crossover in the scan range, report NaN rather than
-    % pretending the closest point is a valid crossover.
+    % No descending gain crossover means phase margin is undefined at this
+    % scan range. Keep NaN so the controller search rejects the point.
     fc = NaN;
     pm = NaN;
 else
