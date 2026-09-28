@@ -41,6 +41,11 @@ extern ADC_HandleTypeDef hadc3;
 extern ADC_HandleTypeDef hadc4;
 
 extern ADC_HandleTypeDef hadc5;
+extern DMA_HandleTypeDef hdma_adc1;
+extern DMA_HandleTypeDef hdma_adc2;
+extern DMA_HandleTypeDef hdma_adc3;
+extern DMA_HandleTypeDef hdma_adc4;
+extern DMA_HandleTypeDef hdma_adc5;
 
 /* USER CODE BEGIN Private defines */
 

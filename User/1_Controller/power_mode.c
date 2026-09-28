@@ -35,10 +35,11 @@ void PowerMode_ReportFault(power_mode_t *m, power_fault_reason_t r)
     if (m->state!=POWER_MODE_FAULT) { m->fault=r; m->fault_count++; m->state=POWER_MODE_FAULT; }
     pwm_disable(m);
 }
-void PowerMode_ClearFault(power_mode_t *m)
+void PowerMode_ClearFault(power_mode_t *m, uint32_t now)
 {
     if (!m || m->state!=POWER_MODE_FAULT) return;
-    m->fault=POWER_FAULT_NONE; m->requested_enable=false; m->state_tick=0u; m->state=POWER_MODE_IDLE;
+    m->fault=POWER_FAULT_NONE; m->requested_enable=false;
+    m->self_check_passed=false; set_state(m,POWER_MODE_SELF_CHECK,now);
 }
 void PowerMode_Process(power_mode_t *m, uint32_t now)
 {
@@ -87,7 +88,12 @@ control_direction_t PowerMode_GetDirection(const power_mode_t *m) { return m ? m
 bool PowerMode_IsPwmEnabled(const power_mode_t *m) { return m && m->pwm_enabled; }
 uint16_t PowerMode_GetFlagBits(const power_mode_t *m)
 {
-    uint16_t f=0u; if (!m) return 0u; if (m->requested_enable) f|=1u; if (m->pwm_enabled) f|=2u;
-    if (m->fault!=POWER_FAULT_NONE) f|=4u; if (m->active_direction==CONTROL_DIRECTION_REVERSE) f|=8u;
-    if (m->self_check_passed) f|=16u; return f;
+    uint16_t f=0u;
+    if (!m) return 0u;
+    if (m->requested_enable) f|=1u;
+    if (m->pwm_enabled) f|=2u;
+    if (m->fault!=POWER_FAULT_NONE) f|=4u;
+    if (m->active_direction==CONTROL_DIRECTION_REVERSE) f|=8u;
+    if (m->self_check_passed) f|=16u;
+    return f;
 }

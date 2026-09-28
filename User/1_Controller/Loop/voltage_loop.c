@@ -79,7 +79,7 @@ CONTROL_RAMFUNC void VoltageLoop_SetCurrentLimit_mA(uint16_t current_limit_mA)
 CONTROL_RAMFUNC uint16_t VoltageLoop_Update(const voltage_loop_sample_t *sample)
 {
     int32_t error_mV;
-    int32_t proportional_q16;
+    int64_t proportional_q16;
     int32_t proportional_mA;
     int64_t integral_candidate_q16;
     int64_t output_candidate_q16;
@@ -106,7 +106,7 @@ CONTROL_RAMFUNC uint16_t VoltageLoop_Update(const voltage_loop_sample_t *sample)
     }
 
     error_mV = (int32_t)sample->reference_mV - (int32_t)sample->voltage_mV;
-    proportional_q16 = s_voltage_loop.kp_q16_mA_per_mV * error_mV;
+    proportional_q16 = (int64_t)s_voltage_loop.kp_q16_mA_per_mV * error_mV;
     proportional_mA = proportional_q16 / 65536L;
     current_limit_q16 = (int64_t)s_voltage_loop.current_limit_mA * 65536LL;
 

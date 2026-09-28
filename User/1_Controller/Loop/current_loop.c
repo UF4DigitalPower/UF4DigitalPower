@@ -16,7 +16,6 @@
   */
 #include "current_loop.h"
 #include "control_config.h"
-#include "current_loop_schedule.h"
 
 typedef struct {
     int32_t error_q15;
@@ -115,8 +114,7 @@ CONTROL_RAMFUNC uint16_t CurrentLoop_Update(const current_loop_sample_t *sample)
     error_q15 = current_error_q15((int32_t)s_current_loop.reference_mA,
                                   measured_mA);
 
-    b0 = CurrentLoopSchedule_B0(sample->region, sample->vin_mV,
-                                sample->vout_mV, s_current_loop.reference_mA);
+    b0 = sample->b0_q15;
 
     /* y[n] = 2^R * (B0*e[n] + B0*e[n-1] + A1*y[n-1]) / 32768. */
     controller_sum = (int32_t)b0 * error_q15 +
