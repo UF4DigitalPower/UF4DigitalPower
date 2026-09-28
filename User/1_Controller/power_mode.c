@@ -53,7 +53,7 @@ void PowerMode_Process(power_mode_t *m, uint32_t now)
             break;
         case POWER_MODE_IDLE:
             pwm_disable(m);
-            if (m->requested_enable) { pwm_enable(m); set_state(m,POWER_MODE_SOFT_START,now); }
+            if (m->requested_enable) { pwm_enable(m); if (m->state!=POWER_MODE_FAULT) set_state(m,POWER_MODE_SOFT_START,now); }
             break;
         case POWER_MODE_SOFT_START:
             if (!m->requested_enable) { pwm_disable(m); set_state(m,POWER_MODE_STOPPING,now); }
@@ -66,7 +66,7 @@ void PowerMode_Process(power_mode_t *m, uint32_t now)
             break;
         case POWER_MODE_STOPPING:
             pwm_disable(m);
-            if (m->requested_enable) { set_state(m,POWER_MODE_SOFT_START,now); pwm_enable(m); }
+            if (m->requested_enable) { pwm_enable(m); if (m->state!=POWER_MODE_FAULT) set_state(m,POWER_MODE_SOFT_START,now); }
             else if (elapsed(now,m->state_tick,s_config.stopping_ms)) set_state(m,POWER_MODE_IDLE,now);
             break;
         case POWER_MODE_DIRECTION_SWITCH:
@@ -74,7 +74,7 @@ void PowerMode_Process(power_mode_t *m, uint32_t now)
             if (elapsed(now,m->state_tick,s_config.direction_deadtime_ms))
             {
                 m->active_direction=m->requested_direction;
-                if (m->requested_enable) { pwm_enable(m); set_state(m,POWER_MODE_SOFT_START,now); }
+                if (m->requested_enable) { pwm_enable(m); if (m->state!=POWER_MODE_FAULT) set_state(m,POWER_MODE_SOFT_START,now); }
                 else set_state(m,POWER_MODE_IDLE,now);
             }
             break;

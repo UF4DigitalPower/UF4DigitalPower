@@ -49,11 +49,8 @@ CONTROL_FORCE_INLINE int16_t adc_to_local_output_mA(const current_loop_sample_t 
         delta = (int32_t)adc - (int32_t)sample->vref_adc;
     }
 
-    /* 3.3 V / 4095 counts / 0.160 V/A, expressed in mA. */
-    delta = (delta * CONTROL_ADC_MA_PER_COUNT_NUM +
-             (delta >= 0 ? CONTROL_ADC_MA_PER_COUNT_DEN / 2 :
-                           -CONTROL_ADC_MA_PER_COUNT_DEN / 2)) /
-            CONTROL_ADC_MA_PER_COUNT_DEN;
+    /* INA240A1 at gain 20 with an 8 mOhm shunt: 160 mV/A. */
+    delta = (delta * (int32_t)sample->adc_vdda_mV * 5) / 3276;
     return (int16_t)clamp_i32(delta, INT16_MIN, INT16_MAX);
 }
 
@@ -105,7 +102,7 @@ CONTROL_RAMFUNC uint16_t CurrentLoop_Update(const current_loop_sample_t *sample)
     int32_t measured_mA;
     int32_t error_q15;
     int32_t output_q15;
-    int32_t controller_sum;
+    int64_t controller_sum;
     int32_t duty_q15;
     int16_t b0;
 
@@ -125,7 +122,7 @@ CONTROL_RAMFUNC uint16_t CurrentLoop_Update(const current_loop_sample_t *sample)
     controller_sum = (int32_t)b0 * error_q15 +
                      (int32_t)b0 * s_current_loop.error_q15 +
                      16384L * s_current_loop.output_q15;
-    output_q15 = (controller_sum * 2L) / 32768L;
+    output_q15 = (int32_t)((controller_sum * 2LL) / 32768LL);
     output_q15 = clamp_i32(output_q15, -32768, 32767);
     duty_q15 = (int32_t)sample->duty_base_q15 +
                (output_q15 * CONTROL_DUTY_SCALE_Q15) / 32768;

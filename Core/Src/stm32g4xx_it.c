@@ -56,6 +56,9 @@
 
 /* External variables --------------------------------------------------------*/
 extern HRTIM_HandleTypeDef hhrtim1;
+extern TIM_HandleTypeDef htim6;
+extern DMA_HandleTypeDef hdma_adc1;
+extern DMA_HandleTypeDef hdma_adc5;
 extern TIM_HandleTypeDef htim16;
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
@@ -201,6 +204,21 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32g4xx.s).                    */
 /******************************************************************************/
+
+void DMA1_Channel1_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_adc1);
+}
+
+void DMA1_Channel4_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_adc5);
+}
+
+void TIM6_DAC_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim6);
+}
 
 /**
   * @brief This function handles TIM1 update interrupt and TIM16 global interrupt.

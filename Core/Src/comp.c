@@ -99,7 +99,8 @@ void MX_COMP3_Init(void)
   hcomp3.Instance = COMP3;
   hcomp3.Init.InputPlus = COMP_INPUT_PLUS_IO1;
   hcomp3.Init.InputMinus = COMP_INPUT_MINUS_DAC3_CH1;
-  hcomp3.Init.OutputPol = COMP_OUTPUTPOL_NONINVERTED;
+  /* FORWARD_IIN decreases with positive current; EEV5 is high active. */
+  hcomp3.Init.OutputPol = COMP_OUTPUTPOL_INVERTED;
   hcomp3.Init.Hysteresis = COMP_HYSTERESIS_NONE;
   hcomp3.Init.BlankingSrce = COMP_BLANKINGSRC_NONE;
   hcomp3.Init.TriggerMode = COMP_TRIGGERMODE_NONE;
@@ -180,7 +181,8 @@ void MX_COMP7_Init(void)
   hcomp7.Instance = COMP7;
   hcomp7.Init.InputPlus = COMP_INPUT_PLUS_IO1;
   hcomp7.Init.InputMinus = COMP_INPUT_MINUS_DAC4_CH1;
-  hcomp7.Init.OutputPol = COMP_OUTPUTPOL_NONINVERTED;
+  /* FORWARD_IOUT decreases with positive current; EEV10 is high active. */
+  hcomp7.Init.OutputPol = COMP_OUTPUTPOL_INVERTED;
   hcomp7.Init.Hysteresis = COMP_HYSTERESIS_NONE;
   hcomp7.Init.BlankingSrce = COMP_BLANKINGSRC_NONE;
   hcomp7.Init.TriggerMode = COMP_TRIGGERMODE_NONE;

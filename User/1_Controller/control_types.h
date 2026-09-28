@@ -33,6 +33,7 @@ typedef struct {
     uint32_t vin_mV;
     uint32_t vout_mV;
     uint16_t vref_adc;
+    uint16_t adc_vdda_mV;
     uint16_t forward_iout_adc;
     uint16_t reverse_iout_adc;
     uint16_t duty_base_q15;
