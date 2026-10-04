@@ -36,25 +36,25 @@ Core/
 对你这个项目，我建议不要把“参数管理器”设计成简单的 struct + Flash_Write()。你现在已经明确需要 UART 动态修改、参数上下限、读写权限、AB 双备份、不同 W25QXX 存储区域，以及以后可能增加参数，所以应该直接做成一个独立的 Parameter Storage Framework。
 
 核心思路是：
-
+```
                     Parameter Manager
                            │
         ┌──────────────────┼──────────────────┐
         │                  │                  │
 Parameter Table     Runtime Values     Storage Manager
-│                  │                  │
-ID / Type / Min     当前运行参数       AB / CRC / Version
-Max / Permission    │                  │
-Default / Storage   │          ┌───────┴────────┐
-Validator           │          │                │
-│       Internal Flash    W25QXX
-│          │                │
-│       Bank A/B        W25QXX A/B
-│                         │
-└─────────────┬───────────┘
-│
-Commit / Load
-
+         │                  │                  │
+         ID / Type / Min     当前运行参数       AB / CRC / Version
+         Max / Permission    │                  │
+         Default / Storage   │          ┌───────┴────────┐
+         Validator           │          │                │
+                  │       Internal Flash    W25QXX
+                  │          │                │
+                  │       Bank A/B        W25QXX A/B
+                  │                         │
+                  └─────────────┬───────────┘
+                                 │
+                          Commit / Load
+```
 我尤其建议把“参数定义”和“参数存储”完全分离。这样以后你的 G474、H750、W25Q64、W25Q128 都可以复用同一套参数管理代码。
 
 1. 最上层 API
